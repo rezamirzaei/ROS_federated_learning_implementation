@@ -1,0 +1,152 @@
+services:
+  # Federated Learning Aggregator Node
+  aggregator:
+    image: fl-robots:latest
+    container_name: fl_aggregator
+    hostname: aggregator
+    environment:
+      - ROS_DOMAIN_ID=42
+      - ROBOT_ID=aggregator
+    networks:
+      - ros_network
+    command: >
+      bash -c "source /ros2_ws/install/setup.bash && 
+               ros2 run fl_robots aggregator"
+    volumes:
+      - ../logs:/ros2_ws/logs
+      - ../models:/ros2_ws/models
+
+  # Robot Agent 1
+  robot_1:
+    image: fl-robots:latest
+    container_name: fl_robot_1
+    hostname: robot_1
+    environment:
+      - ROS_DOMAIN_ID=42
+      - ROBOT_ID=robot_1
+    networks:
+      - ros_network
+    depends_on:
+      - aggregator
+    command: >
+      bash -c "sleep 5 && source /ros2_ws/install/setup.bash && 
+               ros2 run fl_robots robot_agent --ros-args -p robot_id:=robot_1"
+    volumes:
+      - ../logs:/ros2_ws/logs
+
+  # Robot Agent 2
+  robot_2:
+    image: fl-robots:latest
+    container_name: fl_robot_2
+    hostname: robot_2
+    environment:
+      - ROS_DOMAIN_ID=42
+      - ROBOT_ID=robot_2
+    networks:
+      - ros_network
+    depends_on:
+      - aggregator
+    command: >
+      bash -c "sleep 5 && source /ros2_ws/install/setup.bash && 
+               ros2 run fl_robots robot_agent --ros-args -p robot_id:=robot_2"
+    volumes:
+      - ../logs:/ros2_ws/logs
+
+  # Robot Agent 3
+  robot_3:
+    image: fl-robots:latest
+    container_name: fl_robot_3
+    hostname: robot_3
+    environment:
+      - ROS_DOMAIN_ID=42
+      - ROBOT_ID=robot_3
+    networks:
+      - ros_network
+    depends_on:
+      - aggregator
+    command: >
+      bash -c "sleep 5 && source /ros2_ws/install/setup.bash && 
+               ros2 run fl_robots robot_agent --ros-args -p robot_id:=robot_3"
+    volumes:
+      - ../logs:/ros2_ws/logs
+
+  # Coordinator Node (orchestrates training rounds)
+  coordinator:
+    image: fl-robots:latest
+    container_name: fl_coordinator
+    hostname: coordinator
+    environment:
+      - ROS_DOMAIN_ID=42
+    networks:
+      - ros_network
+    depends_on:
+      - aggregator
+      - robot_1
+      - robot_2
+      - robot_3
+    command: >
+      bash -c "sleep 10 && source /ros2_ws/install/setup.bash && 
+               ros2 run fl_robots coordinator"
+    volumes:
+      - ../logs:/ros2_ws/logs
+      - ../models:/ros2_ws/models
+
+  # Visualization/Monitoring Node
+  monitor:
+    image: fl-robots:latest
+    container_name: fl_monitor
+    hostname: monitor
+    environment:
+      - ROS_DOMAIN_ID=42
+    networks:
+      - ros_network
+    depends_on:
+      - coordinator
+    command: >
+      bash -c "sleep 12 && source /ros2_ws/install/setup.bash && 
+               ros2 run fl_robots monitor"
+    volumes:
+      - ../logs:/ros2_ws/logs
+      - ../results:/ros2_ws/results
+
+  # Digital Twin Visualization Node
+  digital_twin:
+    image: fl-robots:latest
+    container_name: fl_digital_twin
+    hostname: digital_twin
+    environment:
+      - ROS_DOMAIN_ID=42
+    networks:
+      - ros_network
+    depends_on:
+      - monitor
+    command: >
+      bash -c "sleep 15 && source /ros2_ws/install/setup.bash && 
+               ros2 run fl_robots digital_twin"
+    volumes:
+      - ../logs:/ros2_ws/logs
+      - ../results:/ros2_ws/results
+
+  # Web Dashboard Node
+  web_dashboard:
+    image: fl-robots:latest
+    container_name: fl_web_dashboard
+    hostname: web_dashboard
+    environment:
+      - ROS_DOMAIN_ID=42
+    networks:
+      - ros_network
+    ports:
+      - "8080:5000"
+    depends_on:
+      - digital_twin
+    command: >
+      bash -c "sleep 18 && source /ros2_ws/install/setup.bash && 
+               ros2 run fl_robots web_dashboard"
+    volumes:
+      - ../logs:/ros2_ws/logs
+      - ../results:/ros2_ws/results
+
+networks:
+  ros_network:
+    driver: bridge

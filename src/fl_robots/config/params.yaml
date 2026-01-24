@@ -1,0 +1,43 @@
+# Federated Learning System Configuration
+# ========================================
+
+# Aggregator Configuration
+aggregator:
+  ros__parameters:
+    min_robots: 2                    # Minimum robots required for aggregation
+    aggregation_timeout: 30.0        # Timeout for collecting weights (seconds)
+    auto_aggregate: true             # Automatically aggregate when ready
+    participation_threshold: 0.5     # Fraction of robots needed to trigger aggregation
+
+# Robot Agent Default Configuration
+robot_agent:
+  ros__parameters:
+    learning_rate: 0.001            # Adam optimizer learning rate
+    batch_size: 32                   # Mini-batch size for training
+    local_epochs: 5                  # Number of local epochs per round
+    samples_per_round: 256           # Training samples generated per round
+
+# Coordinator Configuration
+coordinator:
+  ros__parameters:
+    total_rounds: 20                 # Total federated learning rounds
+    min_robots: 2                    # Minimum robots to start training
+    round_timeout: 60.0              # Timeout for a single round (seconds)
+    evaluation_interval: 5           # Evaluate global model every N rounds
+
+# Monitor Configuration
+monitor:
+  ros__parameters:
+    output_dir: '/ros2_ws/results'   # Directory for saving results
+    save_interval: 30.0              # Save results every N seconds
+
+# Model Configuration (used by all nodes)
+model:
+  input_dim: 12                      # Sensor input dimension
+  hidden_dim: 64                     # Hidden layer dimension
+  output_dim: 4                      # Action output dimension (forward, left, right, stop)
+
+# Simulation Configuration
+simulation:
+  data_distribution: 'non_iid'       # 'iid' or 'non_iid' for synthetic data
+  noise_level: 0.1                   # Noise in synthetic data generation
