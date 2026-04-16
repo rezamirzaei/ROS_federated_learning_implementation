@@ -36,35 +36,19 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
 
-from .ros_compat import (
-    ActionServer,
-    CancelResponse,
-    DurabilityPolicy,
-    GoalResponse,
-    HistoryPolicy,
-    MultiThreadedExecutor,
-    MutuallyExclusiveCallbackGroup,
-    Node,
-    QoSProfile,
-    ReentrantCallbackGroup,
-    ReliabilityPolicy,
-    SetParametersResult,
-    String,
-    Twist,
-    rclpy,
-    require_ros,
-)
+import rclpy
+from rclpy.node import Node
+from rclpy.action import ActionServer, CancelResponse, GoalResponse
+from rclpy.callback_groups import ReentrantCallbackGroup, MutuallyExclusiveCallbackGroup
+from rclpy.executors import MultiThreadedExecutor
+from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
+
+from std_msgs.msg import String
+from geometry_msgs.msg import Twist
 
 from fl_robots.models import SimpleNavigationNet
 
 # Try importing custom interfaces; fall back to String-based protocol
-ModelWeights = None
-TrainingMetrics = None
-RobotStatus = None
-GetModelInfo = None
-RegisterRobot = None
-UpdateHyperparameters = None
-TrainRound = None
 try:
     from fl_robots_interfaces.msg import ModelWeights, TrainingMetrics, RobotStatus
     from fl_robots_interfaces.srv import GetModelInfo, RegisterRobot, UpdateHyperparameters
@@ -305,6 +289,7 @@ class RobotAgentNode(Node):
 
     def _on_parameter_change(self, params):
         """Handle dynamic parameter changes at runtime."""
+        from rcl_interfaces.msg import SetParametersResult
         for param in params:
             if param.name == 'learning_rate' and param.value > 0:
                 self.learning_rate = param.value
@@ -733,7 +718,6 @@ class RobotAgentNode(Node):
 
 
 def main(args=None):
-    require_ros()
     rclpy.init(args=args)
 
     robot_agent = RobotAgentNode()
