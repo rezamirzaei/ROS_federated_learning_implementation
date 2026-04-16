@@ -320,3 +320,89 @@ def test_capture_mode_drives_robots_toward_estimates():
         assert math.isclose(robot.formation_offset[0], expected_offset[0], abs_tol=1e-6)
         assert math.isclose(robot.formation_offset[1], expected_offset[1], abs_tol=1e-6)
     sim.shutdown()
+
+
+def test_capture_cooldown_blocks_same_robot_from_double_scoring():
+    """After a capture, the same robot is on cooldown for a few ticks."""
+    pytest.importorskip("numpy")
+    sim = SimulationEngine(num_robots=3, tick_interval=0.4, auto_start=False)
+    _, robot = next(iter(sim.robots.items()))
+    # Park on the target and capture once.
+    robot.pose.x, robot.pose.y = sim.target_position
+    sim.step_once()
+    assert robot.capture_score == 1
+    first_score = robot.capture_score
+    # Try to capture again immediately — cooldown/grace should block.
+    robot.pose.x, robot.pose.y = sim.target_position
+    sim.step_once()
+    assert robot.capture_score == first_score, "cooldown failed to block double-capture"
+    sim.shutdown()
+
+
+def test_capture_win_condition_sets_winner_id():
+    """Cross the win_score threshold and winner_id should be set; the
+    event payload flags kind='win'."""
+    pytest.importorskip("numpy")
+    sim = SimulationEngine(num_robots=2, tick_interval=0.4, auto_start=False)
+    # Crank the scoreboard manually (bypass cooldown by driving both robots).
+    ids = list(sim.robots)
+    win_target = sim.cfg.capture_win_score
+    steps = 0
+    while sim.winner_id is None and steps < 200:
+        # Whichever robot is *not* the last capturer parks on the target.
+        candidate = next(r for r in ids if r != sim._last_capturer)
+        sim.robots[candidate].pose.x, sim.robots[candidate].pose.y = sim.target_position
+        sim.step_once()
+        steps += 1
+    assert sim.winner_id is not None, f"nobody won after {steps} steps"
+    assert sim.robots[sim.winner_id].capture_score >= win_target
+    # The latest capture event must be flagged as a win.
+    assert sim.capture_events[0]["kind"] == "win"
+    assert sim.capture_events[0]["winner_id"] == sim.winner_id
+    sim.shutdown()
+
+
+def test_planner_solve_with_refs_accepts_per_step_trajectories():
+    """The new public API should drop-in-replace solve() with a list of refs."""
+    from fl_robots.mpc import DistributedMPCPlanner
+    from fl_robots.sim_models import Pose2D, RobotState
+
+    planner = DistributedMPCPlanner(horizon=5, dt=0.3, max_speed=0.3)
+    robot = RobotState(
+        robot_id="r0",
+        pose=Pose2D(0.0, 0.0),
+        velocity=(0.0, 0.0),
+        formation_offset=(0.0, 0.0),
+        goal=(0.0, 0.0),
+    )
+    # A ramp along +x — robot should track it progressively.
+    refs = {"r0": [(0.2 * (k + 1), 0.0) for k in range(5)]}
+    plan = planner.solve_with_refs([robot], refs)["r0"]
+    assert len(plan.path) == 5
+    # Monotonic x progress toward the final ref.
+    xs = [p.x for p in plan.path]
+    assert xs[-1] > xs[0]
+
+
+def test_qp_planner_solve_with_refs_tracks_moving_ref():
+    """QP planner should track a time-varying reference. We pick a ramp
+    slow enough that slew + max_speed can follow, then check tracking
+    error is modest."""
+    from fl_robots.mpc_qp import QPMPCPlanner
+    from fl_robots.sim_models import Pose2D, RobotState
+
+    planner = QPMPCPlanner(horizon=8, dt=0.3, max_speed=0.4, slew_limit=0.4)
+    robot = RobotState(
+        robot_id="r0",
+        pose=Pose2D(0.0, 0.0),
+        velocity=(0.0, 0.0),
+        formation_offset=(0.0, 0.0),
+        goal=(0.0, 0.0),
+    )
+    # Ramp at 0.1 m per step ⇒ ~0.33 m/s — well inside max_speed=0.4.
+    moving = {"r0": [(0.1 * (k + 1), 0.0) for k in range(8)]}
+    plan_moving = planner.solve_with_refs([robot], moving)["r0"]
+    assert plan_moving.tracking_error < 0.3
+    # Sanity: the plan progresses monotonically along +x.
+    xs = [p.x for p in plan_moving.path]
+    assert xs[-1] > xs[0]

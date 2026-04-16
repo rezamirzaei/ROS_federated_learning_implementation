@@ -133,6 +133,33 @@ class SimulationConfig(BaseModel):
         ),
     )
     max_capture_history: int = Field(default=30, ge=0)
+    capture_win_score: int = Field(
+        default=5,
+        ge=1,
+        description=(
+            "First robot to reach this score wins the match — a "
+            "``/localization/capture`` event with kind='win' is published "
+            "and ``winner_id`` stays set until the next reset."
+        ),
+    )
+    capture_grace_ticks: int = Field(
+        default=2,
+        ge=0,
+        description=(
+            "Ticks after a capture during which no new capture can fire. "
+            "Gives displaced robots time to notice the new target and "
+            "prevents double-dipping when the winner hasn't moved yet."
+        ),
+    )
+    capture_cooldown_ticks: int = Field(
+        default=4,
+        ge=0,
+        description=(
+            "Ticks during which the *most recent* capturer is ineligible "
+            "to capture again. Keeps the game competitive — a robot that "
+            "has just scored can't simply camp on the next target."
+        ),
+    )
 
 
 class SimulationEngine:
@@ -204,6 +231,15 @@ class SimulationEngine:
             maxlen=cfg.max_capture_history
         )
         self.total_captures: int = 0
+        #: Robot that scored the most recent capture — ineligible again
+        #: until ``_capture_cooldown_until`` (exclusive).
+        self._last_capturer: str | None = None
+        self._capture_cooldown_until: int = 0
+        #: Tick count at which the global capture grace window ends.
+        self._capture_grace_until: int = 0
+        #: Winner of the current match, or ``None`` until a robot hits
+        #: ``cfg.capture_win_score``. Set by :meth:`_maybe_capture_target_locked`.
+        self.winner_id: str | None = None
 
         self.bus.subscribe("/system/command", self._handle_command_event)
         self._reset_locked()
@@ -306,6 +342,8 @@ class SimulationEngine:
                     "radius": self.cfg.capture_radius,
                     "bounds": self.cfg.capture_bounds,
                     "total_captures": self.total_captures,
+                    "win_score": self.cfg.capture_win_score,
+                    "winner_id": self.winner_id,
                     "scoreboard": sorted(
                         (
                             {"robot_id": r.robot_id, "score": r.capture_score}
@@ -394,6 +432,10 @@ class SimulationEngine:
         self.capture_events.clear()
         self.total_captures = 0
         self._target_rng = random.Random(1337)
+        self._last_capturer = None
+        self._capture_cooldown_until = 0
+        self._capture_grace_until = 0
+        self.winner_id = None
 
         self._formation_slots.clear()
         for index in range(self.num_robots):
@@ -462,40 +504,88 @@ class SimulationEngine:
             self._run_toa_locked(now)
 
         capture_mode = self.cfg.capture_enabled and self._toa_estimator is not None
+        # Horizon used for per-step reference prediction. Both planners
+        # expose ``horizon`` on the instance.
+        horizon = int(getattr(self.planner, "horizon", 8))
+        dt = float(getattr(self.planner, "dt", 0.35))
+
+        refs: dict[str, list[tuple[float, float]]] = {}
+
         if capture_mode:
             # ── Hunt mode ───────────────────────────────────────────
-            # Every robot steers toward its *own* distributed TOA
-            # estimate of the target. We encode this in the planner's
-            # existing ``leader + formation_offset`` contract by
-            # pinning the planner's leader to the true target and
-            # setting each robot's offset to (est_i − target). The
-            # result: each robot ends up with a distinct reference
-            # (its private, noisy estimate), so trajectories diverge
-            # naturally as the estimator converges.
-            tgt = self.target_position
+            # Each robot steers toward its *own* distributed-TOA estimate
+            # of the target. For the horizon we extrapolate the target
+            # with the shared α-β motion model (fallback = static), so
+            # chasing robots anticipate where the target is *going*, not
+            # just where it is now. This fixes the characteristic
+            # "one-tick lag" behaviour of a static-reference MPC.
+            tgt_now = self.target_position
+            tgt_traj: list[tuple[float, float]] = []
+            if self._target_predictor is not None:
+                # Snapshot predictor state, project forward, restore — so
+                # the simulation's actual predictor isn't advanced by the
+                # planner projection.
+                px, py, vx, vy = self._target_predictor.state
+                for k in range(horizon):
+                    tgt_traj.append((px + vx * dt * (k + 1), py + vy * dt * (k + 1)))
+            else:
+                tgt_traj = [tgt_now] * horizon
             for robot_id, robot in self.robots.items():
                 est = self._toa_estimator.estimate(robot_id)  # type: ignore[union-attr]
-                robot.formation_offset = (est[0] - tgt[0], est[1] - tgt[1])
-            planner_leader = tgt
+                # formation_offset describes the *current* slot (k=0)
+                # relative to the planner leader — used by dashboards
+                # and snapshots. The horizon-length lookahead lives in
+                # ``refs[robot_id]`` instead, so observers stay stable.
+                robot.formation_offset = (est[0] - tgt_now[0], est[1] - tgt_now[1])
+                # Per-step reference = robot's private estimate shifted
+                # by the *predicted* target motion at each step.
+                refs[robot_id] = [
+                    (est[0] + (tx - tgt_now[0]), est[1] + (ty - tgt_now[1]))
+                    for (tx, ty) in tgt_traj
+                ]
+            planner_leader = tgt_now
         else:
             # ── Rotating formation ──────────────────────────────────
             # Each robot's formation slot rotates around the leader at
-            # ``formation_rotation_rate`` rad/s, and we add a small
-            # per-robot radial breathing so trajectories aren't just
-            # translated copies of the leader. This is the fix for the
-            # "robots all move identically" complaint.
-            rot_angle = self.leader_phase * self.cfg.formation_rotation_rate
-            breathing = 0.08 * math.sin(self.leader_phase * 0.9)
+            # ``formation_rotation_rate`` rad/s. For the horizon we
+            # extrapolate both the leader's circular motion *and* the
+            # slot rotation, so followers plan against a *moving* target
+            # rather than a static snapshot — a measurable tracking-
+            # error improvement at nontrivial formation rotation rates.
+            rot_rate = self.cfg.formation_rotation_rate
+            leader_omega_a = 0.6 * 0.55
+            leader_omega_b = 0.6 * 0.35
             for robot_id, robot in self.robots.items():
                 base_angle, base_radius = self._formation_slots.get(
                     robot_id, (0.0, self._formation_radius)
                 )
-                radius = base_radius + breathing * math.cos(base_angle)
-                theta = base_angle + rot_angle
-                robot.formation_offset = (radius * math.cos(theta), radius * math.sin(theta))
+                per_robot_ref: list[tuple[float, float]] = []
+                for k in range(horizon):
+                    # Elapsed *world* time at horizon step k (k=0 is the
+                    # control applied this tick, so planning happens in
+                    # one-step-ahead land).
+                    future_phase = self.leader_phase + (k + 1) * dt * (1.0 / self.tick_interval) * (
+                        0.6 * self.tick_interval
+                    )
+                    leader_x = 1.4 * math.cos(future_phase * leader_omega_a / 0.6)
+                    leader_y = 0.9 * math.sin(future_phase * leader_omega_b / 0.6)
+                    theta = base_angle + future_phase * rot_rate
+                    breathing = 0.08 * math.sin(future_phase * 0.9)
+                    radius = base_radius + breathing * math.cos(base_angle)
+                    per_robot_ref.append(
+                        (leader_x + radius * math.cos(theta), leader_y + radius * math.sin(theta))
+                    )
+                refs[robot_id] = per_robot_ref
+                # Keep formation_offset consistent with the k=0 step so
+                # downstream consumers (snapshot, goal field, dashboards)
+                # see a coherent "current slot".
+                robot.formation_offset = (
+                    per_robot_ref[0][0] - self.leader_position[0],
+                    per_robot_ref[0][1] - self.leader_position[1],
+                )
             planner_leader = self.leader_position
 
-        plans = self.planner.solve(list(self.robots.values()), planner_leader)
+        plans = self.planner.solve_with_refs(list(self.robots.values()), refs)
 
         min_separation = float("inf")
         formation_error = 0.0
@@ -703,21 +793,38 @@ class SimulationEngine:
         self.bus.publish("/localization/toa", "toa-estimator", payload)
 
     def _maybe_capture_target_locked(self) -> None:
-        """Award a point to the closest robot inside the capture radius and
-        spawn a fresh target.
+        """Award a point to the closest eligible robot inside the capture
+        radius and spawn a fresh target.
 
-        Only one capture per tick — if two robots are both inside the
-        radius the closer one wins, which is both fair and avoids
-        double-spawning. The spawn is uniformly random inside a square
-        ``[-capture_bounds, capture_bounds]²`` and guaranteed to be at
-        least ``1.5·capture_radius`` away from every robot so the next
-        round actually requires some travel.
+        Eligibility rules (all configurable):
+
+        * During the **grace window** after any capture (next
+          ``cfg.capture_grace_ticks`` ticks) nothing fires — gives
+          displaced robots time to notice the new target.
+        * The **most recent capturer** is on cooldown for
+          ``cfg.capture_cooldown_ticks`` ticks, so the same robot can't
+          simply camp the next target.
+        * The match ends when a robot reaches ``cfg.capture_win_score``;
+          ``winner_id`` is set and a ``kind='win'`` event is emitted. New
+          captures still count after that — useful for endless mode —
+          but we stop re-announcing the win.
         """
+        if self.winner_id is not None:
+            # Match is over; keep running but don't re-emit wins.
+            return
+        if self.tick_count < self._capture_grace_until:
+            return
+
         tgt = self.target_position
-        # Find the closest robot and its distance.
+        # Find the closest *eligible* robot and its distance.
         closest_id: str | None = None
         closest_dist = float("inf")
+        on_cooldown = (
+            self._last_capturer if self.tick_count < self._capture_cooldown_until else None
+        )
         for rid, robot in self.robots.items():
+            if rid == on_cooldown:
+                continue
             d = math.hypot(robot.pose.x - tgt[0], robot.pose.y - tgt[1])
             if d < closest_dist:
                 closest_dist = d
@@ -728,6 +835,9 @@ class SimulationEngine:
         robot = self.robots[closest_id]
         robot.capture_score += 1
         self.total_captures += 1
+        self._last_capturer = closest_id
+        self._capture_cooldown_until = self.tick_count + self.cfg.capture_cooldown_ticks
+        self._capture_grace_until = self.tick_count + self.cfg.capture_grace_ticks
 
         new_target = self._spawn_target()
         self.target_position = new_target
@@ -742,13 +852,20 @@ class SimulationEngine:
         if self._target_predictor is not None:
             self._target_predictor.reset(x=new_target[0], y=new_target[1])
 
+        won = robot.capture_score >= self.cfg.capture_win_score
+        if won:
+            self.winner_id = closest_id
+
         event = {
             "tick": self.tick_count,
+            "kind": "win" if won else "capture",
             "robot_id": closest_id,
             "score": robot.capture_score,
             "total_captures": self.total_captures,
             "target": {"x": tgt[0], "y": tgt[1]},
             "new_target": {"x": new_target[0], "y": new_target[1]},
+            "win_score": self.cfg.capture_win_score,
+            "winner_id": self.winner_id,
         }
         self.capture_events.appendleft(event)
         self.bus.publish("/localization/capture", "simulation", event)

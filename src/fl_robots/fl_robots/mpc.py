@@ -84,17 +84,52 @@ class DistributedMPCPlanner:
         robots: list[RobotState],
         leader_position: tuple[float, float],
     ) -> dict[str, MPCPlan]:
-        """Solve for every robot sequentially."""
+        """Solve for every robot with a single static reference point per robot.
+
+        Backward-compatible wrapper around :meth:`solve_with_refs` — builds a
+        ``horizon``-length reference that sits at ``leader + formation_offset``
+        for every horizon step.
+        """
+        refs: dict[str, list[tuple[float, float]]] = {}
+        for robot in robots:
+            tgt = (
+                leader_position[0] + robot.formation_offset[0],
+                leader_position[1] + robot.formation_offset[1],
+            )
+            refs[robot.robot_id] = [tgt] * self.horizon
+        return self.solve_with_refs(robots, refs)
+
+    def solve_with_refs(
+        self,
+        robots: list[RobotState],
+        refs: dict[str, list[tuple[float, float]]],
+    ) -> dict[str, MPCPlan]:
+        """Solve with per-robot, per-step reference trajectories.
+
+        Each robot's reference is a list of length ``horizon`` giving the
+        desired ``(x, y)`` at every predicted step. This unlocks role-based
+        planning (leader has one trajectory, followers track moving slots
+        over the horizon, scouts chase a predicted target) without changing
+        the cost/constraint formulation.
+
+        Missing or short sequences are padded with their last point so
+        callers can be sloppy without the solver exploding.
+        """
         plans: dict[str, MPCPlan] = {}
         predicted_neighbors: dict[str, list[TrajectoryPoint]] = {}
 
         for robot in robots:
-            target = (
-                leader_position[0] + robot.formation_offset[0],
-                leader_position[1] + robot.formation_offset[1],
-            )
+            ref_seq = list(refs.get(robot.robot_id, ()))
+            if not ref_seq:
+                ref_seq = [(robot.pose.x, robot.pose.y)]
+            # Pad/truncate to exactly ``horizon`` entries.
+            if len(ref_seq) < self.horizon:
+                ref_seq = ref_seq + [ref_seq[-1]] * (self.horizon - len(ref_seq))
+            elif len(ref_seq) > self.horizon:
+                ref_seq = ref_seq[: self.horizon]
+
             t0 = time.perf_counter()
-            plan = self._plan_robot(robot, target, predicted_neighbors, robots)
+            plan = self._plan_robot(robot, ref_seq, predicted_neighbors, robots)
             self._last_solve_time_ms[robot.robot_id] = (time.perf_counter() - t0) * 1e3
             self._last_control_effort[robot.robot_id] = math.hypot(*plan.first_velocity)
             self._last_tracking_error[robot.robot_id] = plan.tracking_error
@@ -145,7 +180,7 @@ class DistributedMPCPlanner:
     def _plan_robot(
         self,
         robot: RobotState,
-        target: tuple[float, float],
+        ref_seq: list[tuple[float, float]],
         predicted_neighbors: dict[str, list[TrajectoryPoint]],
         all_robots: list[RobotState],
     ) -> MPCPlan:
@@ -156,6 +191,7 @@ class DistributedMPCPlanner:
         first_velocity = current_velocity
 
         for step in range(self.horizon):
+            target = ref_seq[step]
             candidates = self._candidate_velocities(current, current_velocity, target)
             best_velocity = current_velocity
             best_point = TrajectoryPoint(current.x, current.y)
@@ -192,9 +228,9 @@ class DistributedMPCPlanner:
             current_velocity = best_velocity
 
         tracking_error = (
-            math.dist((path[-1].x, path[-1].y), target)
+            math.dist((path[-1].x, path[-1].y), ref_seq[-1])
             if path
-            else math.dist((current.x, current.y), target)
+            else math.dist((current.x, current.y), ref_seq[-1])
         )
         return MPCPlan(
             path=path,
