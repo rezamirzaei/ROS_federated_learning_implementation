@@ -22,13 +22,18 @@ from collections import defaultdict
 from datetime import datetime
 from typing import Any
 
-import rclpy
-from rclpy.node import Node
-from rclpy.callback_groups import ReentrantCallbackGroup
-from rclpy.executors import MultiThreadedExecutor
-from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
-
-from std_msgs.msg import String
+from .ros_compat import (
+    DurabilityPolicy,
+    HistoryPolicy,
+    MultiThreadedExecutor,
+    Node,
+    QoSProfile,
+    ReentrantCallbackGroup,
+    ReliabilityPolicy,
+    String,
+    rclpy,
+    require_ros,
+)
 
 
 class MonitorNode(Node):
@@ -63,8 +68,8 @@ class MonitorNode(Node):
 
         # Metrics storage (bounded to prevent unbounded memory growth)
         self._max_metrics_per_robot = 500
-        self.robot_metrics: dict[str, list[Dict]] = defaultdict(list)
-        self.aggregation_metrics: list[Dict] = []
+        self.robot_metrics: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        self.aggregation_metrics: list[dict[str, Any]] = []
         self.coordinator_status: dict[str, Any] = {}
         self.start_time = time.time()
 
@@ -148,7 +153,7 @@ class MonitorNode(Node):
         except Exception as e:
             self.get_logger().error(f'Error processing robot status: {e}')
 
-    def _handle_robot_registration(self, robot_id: str, data: Dict):
+    def _handle_robot_registration(self, robot_id: str, data: dict[str, Any]):
         """Handle new robot registration."""
         self.get_logger().info(f'📡 Robot {robot_id} registered')
 
@@ -171,7 +176,7 @@ class MonitorNode(Node):
                 callback_group=self.cb_group
             )
 
-    def _handle_robot_status(self, robot_id: str, data: Dict):
+    def _handle_robot_status(self, robot_id: str, data: dict[str, Any]):
         """Handle robot status update."""
         if data.get('last_loss') is not None:
             self.robot_metrics[robot_id].append({
@@ -356,6 +361,7 @@ class MonitorNode(Node):
 
 
 def main(args=None):
+    require_ros()
     rclpy.init(args=args)
 
     monitor = MonitorNode()

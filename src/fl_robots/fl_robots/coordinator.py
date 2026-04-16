@@ -24,13 +24,19 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-import rclpy
-from rclpy.node import Node
-from rclpy.callback_groups import ReentrantCallbackGroup, MutuallyExclusiveCallbackGroup
-from rclpy.executors import MultiThreadedExecutor
-from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
-
-from std_msgs.msg import String
+from .ros_compat import (
+    DurabilityPolicy,
+    HistoryPolicy,
+    MultiThreadedExecutor,
+    MutuallyExclusiveCallbackGroup,
+    Node,
+    QoSProfile,
+    ReentrantCallbackGroup,
+    ReliabilityPolicy,
+    String,
+    rclpy,
+    require_ros,
+)
 
 
 class TrainingState(Enum):
@@ -446,6 +452,7 @@ class CoordinatorNode(Node):
 
 
 def main(args=None):
+    require_ros()
     rclpy.init(args=args)
 
     coordinator = CoordinatorNode()

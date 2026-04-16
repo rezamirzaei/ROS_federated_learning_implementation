@@ -183,8 +183,7 @@ ROS/
 
 ### Access
 ```
-http://localhost:5000      # Direct
-http://localhost:8080      # Docker port mapping
+http://localhost:5000      # Standalone and Docker Compose mapping
 ```
 
 ## 📊 Algorithm: Federated Averaging (FedAvg)

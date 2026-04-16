@@ -31,23 +31,36 @@ from typing import Any
 
 import numpy as np
 
-import rclpy
-from rclpy.node import Node
-from rclpy.callback_groups import ReentrantCallbackGroup, MutuallyExclusiveCallbackGroup
-from rclpy.executors import MultiThreadedExecutor
-from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
-
-from std_msgs.msg import String
+from .ros_compat import (
+    DurabilityPolicy,
+    HistoryPolicy,
+    MultiThreadedExecutor,
+    MutuallyExclusiveCallbackGroup,
+    Node,
+    QoSProfile,
+    ReentrantCallbackGroup,
+    ReliabilityPolicy,
+    String,
+    rclpy,
+    require_ros,
+)
 
 from fl_robots.models import SimpleNavigationNet, federated_averaging, compute_gradient_divergence
 
 # Try importing Lifecycle and custom interfaces
+LifecycleNode = None
+TransitionCallbackReturn = None
+LifecycleState = None
 try:
     from rclpy.lifecycle import LifecycleNode, TransitionCallbackReturn, LifecycleState
     LIFECYCLE_AVAILABLE = True
 except ImportError:
     LIFECYCLE_AVAILABLE = False
 
+RegisterRobot = None
+TriggerAggregation = None
+GetModelInfo = None
+AggregationResult = None
 try:
     from fl_robots_interfaces.srv import RegisterRobot, TriggerAggregation, GetModelInfo
     from fl_robots_interfaces.msg import AggregationResult
@@ -619,6 +632,7 @@ class AggregatorNode(BaseNode):
 
 
 def main(args=None):
+    require_ros()
     rclpy.init(args=args)
 
     aggregator = AggregatorNode()

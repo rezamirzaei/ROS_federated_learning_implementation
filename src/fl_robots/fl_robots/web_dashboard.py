@@ -27,14 +27,26 @@ from collections import deque
 from pathlib import Path
 from typing import Any
 
-import rclpy
-from rclpy.node import Node
-from rclpy.callback_groups import ReentrantCallbackGroup
-from rclpy.executors import MultiThreadedExecutor
-from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
+from .ros_compat import (
+    DurabilityPolicy,
+    HistoryPolicy,
+    MultiThreadedExecutor,
+    Node,
+    QoSProfile,
+    ReentrantCallbackGroup,
+    ReliabilityPolicy,
+    String,
+    rclpy,
+    require_ros,
+)
 
-from std_msgs.msg import String
-
+Flask = None
+render_template = None
+jsonify = None
+request = None
+send_file = None
+send_from_directory = None
+CORS = None
 try:
     from flask import Flask, render_template, jsonify, request, send_file, send_from_directory
     from flask_cors import CORS
@@ -43,6 +55,8 @@ except ImportError:
     FLASK_AVAILABLE = False
     print("Flask not available. Install with: pip install flask flask-cors")
 
+SocketIO = None
+emit = None
 try:
     from flask_socketio import SocketIO, emit
     SOCKETIO_AVAILABLE = True
@@ -50,6 +64,9 @@ except ImportError:
     SOCKETIO_AVAILABLE = False
 
 # Try importing custom service interfaces for service client integration
+TriggerAggregation = None
+UpdateHyperparameters = None
+GetModelInfo = None
 try:
     from fl_robots_interfaces.srv import TriggerAggregation, UpdateHyperparameters, GetModelInfo
     CUSTOM_INTERFACES = True
@@ -85,15 +102,15 @@ class WebDashboardNode(Node):
 
         # ── Model: State storage ────────────────────────────────────
         self.state_lock = threading.Lock()
-        self.robots: dict[str, Dict] = {}
+        self.robots: dict[str, dict[str, Any]] = {}
         self.coordinator_state = "IDLE"
         self.current_round = 0
         self.total_aggregations = 0
         self.mean_divergence = 0.0
         self.start_time = time.time()
         self.event_log: deque = deque(maxlen=200)
-        self.loss_history: list[Dict] = []
-        self.acc_history: list[Dict] = []
+        self.loss_history: list[dict[str, Any]] = []
+        self.acc_history: list[dict[str, Any]] = []
 
         # QoS
         qos_reliable = QoSProfile(
@@ -220,7 +237,7 @@ class WebDashboardNode(Node):
     # Model: State Retrieval
     # ────────────────────────────────────────────────────────────────
 
-    def _get_status(self) -> Dict:
+    def _get_status(self) -> dict[str, Any]:
         with self.state_lock:
             robots_data = {}
             total_loss = 0
@@ -267,7 +284,7 @@ class WebDashboardNode(Node):
         self.command_publisher.publish(msg)
         self._add_event(f'Sent command: {command}')
 
-    def _call_trigger_aggregation(self) -> Dict:
+    def _call_trigger_aggregation(self) -> dict[str, Any]:
         """Call TriggerAggregation service."""
         if not self.trigger_agg_client or not self.trigger_agg_client.wait_for_service(timeout_sec=1.0):
             return {'success': False, 'message': 'Service not available'}
@@ -288,7 +305,7 @@ class WebDashboardNode(Node):
                 callback_group=self.cb_group_clients
             )
 
-    def _call_update_hyperparameters(self, lr: float, bs: int, epochs: int) -> Dict:
+    def _call_update_hyperparameters(self, lr: float, bs: int, epochs: int) -> dict[str, Any]:
         """Update hyperparameters on all known robots via services."""
         results = []
         for rid in list(self.robots.keys()):
@@ -421,6 +438,7 @@ class WebDashboardNode(Node):
 
 
 def main(args=None):
+    require_ros()
     rclpy.init(args=args)
 
     node = WebDashboardNode()

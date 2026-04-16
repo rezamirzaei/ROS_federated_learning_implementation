@@ -1,11 +1,4 @@
 import math
-import sys
-from pathlib import Path
-
-# Ensure fl_robots is importable
-_src = str(Path(__file__).resolve().parent.parent / "src" / "fl_robots")
-if _src not in sys.path:
-    sys.path.insert(0, _src)
 
 from fl_robots.message_bus import MessageBus
 from fl_robots.sim_models import Pose2D, RobotState, AggregationRecord, BusEvent
@@ -257,4 +250,3 @@ def test_web_index_returns_html():
         assert b"Digital Twin" in resp.data
     finally:
         simulation.shutdown()
-

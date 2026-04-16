@@ -23,14 +23,26 @@ from typing import Any
 import numpy as np
 from pydantic import BaseModel, ConfigDict, Field
 
-import rclpy
-from rclpy.node import Node
-from rclpy.callback_groups import ReentrantCallbackGroup
-from rclpy.executors import MultiThreadedExecutor
-from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
+from .ros_compat import (
+    DurabilityPolicy,
+    HistoryPolicy,
+    MultiThreadedExecutor,
+    Node,
+    QoSProfile,
+    ReentrantCallbackGroup,
+    ReliabilityPolicy,
+    String,
+    rclpy,
+    require_ros,
+)
 
-from std_msgs.msg import String
-
+matplotlib = None
+plt = None
+Circle = None
+FancyArrowPatch = None
+Rectangle = None
+PatchCollection = None
+mcolors = None
 try:
     import matplotlib
     matplotlib.use('Agg')  # Use non-interactive backend for Docker
@@ -387,6 +399,7 @@ class DigitalTwinNode(Node):
 
 
 def main(args=None):
+    require_ros()
     rclpy.init(args=args)
 
     node = DigitalTwinNode()

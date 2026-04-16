@@ -4,7 +4,7 @@
   <name>fl_robots_interfaces</name>
   <version>1.0.0</version>
   <description>Custom message, service, and action interfaces for the Federated Learning Multi-Robot System</description>
-  <maintainer email="your-email@example.com">Developer</maintainer>
+  <maintainer email="developer@fl-robots.local">Developer</maintainer>
   <license>MIT</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>

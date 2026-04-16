@@ -12,13 +12,6 @@ Tests cover:
 import pytest
 import numpy as np
 import torch
-import sys
-from pathlib import Path
-
-# Ensure fl_robots is importable
-_src = str(Path(__file__).resolve().parent.parent / "src" / "fl_robots")
-if _src not in sys.path:
-    sys.path.insert(0, _src)
 
 from fl_robots.models.simple_nn import (
     SimpleNavigationNet,

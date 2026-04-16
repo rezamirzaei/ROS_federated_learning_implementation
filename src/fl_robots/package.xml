@@ -26,6 +26,12 @@
   <depend>action_msgs</depend>
   <depend>builtin_interfaces</depend>
   <depend>rcl_interfaces</depend>
+  <exec_depend>python3-numpy</exec_depend>
+  <exec_depend>python3-scipy</exec_depend>
+  <exec_depend>python3-sklearn</exec_depend>
+  <exec_depend>python3-flask</exec_depend>
+  <exec_depend>python3-jinja2</exec_depend>
+  <exec_depend>python3-matplotlib</exec_depend>
 
   <!-- Custom Interfaces Package -->
   <exec_depend>fl_robots_interfaces</exec_depend>
