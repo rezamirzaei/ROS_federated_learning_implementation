@@ -48,7 +48,7 @@ setup(
     ],
     zip_safe=True,
     maintainer='Developer',
-    maintainer_email='your-email@example.com',
+    maintainer_email='developer@fl-robots.local',
     description='Federated Learning Multi-Robot Coordination System for ROS2',
     license='MIT',
     tests_require=['pytest'],

@@ -1,10 +1,17 @@
 import math
+import sys
+from pathlib import Path
 
-from ros_web.message_bus import MessageBus
-from ros_web.models import Pose2D, RobotState, AggregationRecord, BusEvent
-from ros_web.mpc import DistributedMPCPlanner
-from ros_web.simulation import SimulationEngine
-from ros_web.web import create_app
+# Ensure fl_robots is importable
+_src = str(Path(__file__).resolve().parent.parent / "src" / "fl_robots")
+if _src not in sys.path:
+    sys.path.insert(0, _src)
+
+from fl_robots.message_bus import MessageBus
+from fl_robots.sim_models import Pose2D, RobotState, AggregationRecord, BusEvent
+from fl_robots.mpc import DistributedMPCPlanner
+from fl_robots.simulation import SimulationEngine
+from fl_robots.standalone_web import create_app
 
 
 # ── MessageBus ──────────────────────────────────────────────────────

@@ -75,9 +75,12 @@ def generate_launch_description():
         }]
     )
 
-    # Robot agents (delayed start)
+    # Robot agents (delayed start) — supports up to 6 robots via num_robots arg
+    # Note: LaunchConfiguration is evaluated at runtime; we pre-generate
+    # nodes for the maximum count and gate each with a condition.
+    max_robots = 6
     robot_nodes = []
-    for i in range(3):  # Default to 3 robots
+    for i in range(max_robots):
         robot_node = TimerAction(
             period=5.0 + i * 2.0,  # Stagger robot startup
             actions=[
@@ -92,7 +95,10 @@ def generate_launch_description():
                         'batch_size': 32,
                         'local_epochs': LaunchConfiguration('local_epochs'),
                         'samples_per_round': 256,
-                    }]
+                    }],
+                    condition=IfCondition(
+                        PythonExpression([str(i), ' < ', LaunchConfiguration('num_robots')])
+                    ),
                 )
             ]
         )

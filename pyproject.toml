@@ -10,7 +10,7 @@ readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.10"
 authors = [
-    {name = "Developer", email = "your-email@example.com"}
+    {name = "Developer"}
 ]
 keywords = ["ros2", "federated-learning", "robotics", "distributed-ml"]
 classifiers = [
@@ -52,9 +52,8 @@ viz = [
 ]
 
 [project.urls]
-"Homepage" = "https://github.com/yourusername/ros-federated-learning"
-"Documentation" = "https://github.com/yourusername/ros-federated-learning/docs"
-"Bug Tracker" = "https://github.com/yourusername/ros-federated-learning/issues"
+"Homepage" = "https://github.com/rezami/ros-federated-learning"
+"Bug Tracker" = "https://github.com/rezami/ros-federated-learning/issues"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

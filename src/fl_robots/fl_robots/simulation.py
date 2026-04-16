@@ -17,11 +17,18 @@ from typing import Any
 
 from .message_bus import MessageBus
 from .sim_models import AggregationRecord, Pose2D, RobotState
-from .mpc import DistributedMPCPlanner
+from .mpc import DistributedMPCPlanner, _safe_atan2
+
+__all__ = ["SimulationEngine"]
 
 
 class SimulationEngine:
     """ROS-inspired multi-agent system with federated rounds and distributed MPC."""
+
+    _VALID_COMMANDS = frozenset({
+        "start_training", "stop_training", "toggle_autopilot",
+        "step", "disturbance", "reset",
+    })
 
     def __init__(self, num_robots: int = 4, tick_interval: float = 0.45, auto_start: bool = True) -> None:
         self.num_robots = num_robots
@@ -65,6 +72,12 @@ class SimulationEngine:
             self._thread.join(timeout=2.0)
 
     def issue_command(self, command: str) -> None:
+        """Dispatch a user command through the message bus."""
+        if command not in self._VALID_COMMANDS:
+            raise ValueError(
+                f"Unknown command {command!r}. "
+                f"Valid: {', '.join(sorted(self._VALID_COMMANDS))}"
+            )
         self.bus.publish("/system/command", "web-ui", {"command": command})
 
     def step_once(self) -> None:
@@ -142,7 +155,7 @@ class SimulationEngine:
             elif command == "reset":
                 self._reset_locked()
             else:
-                raise ValueError(f"Unsupported command: {command}")
+                return  # unknown command — silently ignore internal events
 
             self.bus.publish(
                 "/fl/training_command", "coordinator",
@@ -192,7 +205,7 @@ class SimulationEngine:
             plan = plans[robot_id]
             next_point = plan.path[0]
             robot.velocity = plan.first_velocity
-            robot.pose = Pose2D(next_point.x, next_point.y, math.atan2(plan.first_velocity[1], plan.first_velocity[0] or 1e-6))
+            robot.pose = Pose2D(next_point.x, next_point.y, _safe_atan2(plan.first_velocity[1], plan.first_velocity[0]))
             robot.goal = (
                 self.leader_position[0] + robot.formation_offset[0],
                 self.leader_position[1] + robot.formation_offset[1],

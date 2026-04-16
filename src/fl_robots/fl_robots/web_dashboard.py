@@ -344,12 +344,19 @@ class WebDashboardNode(Node):
 
         @app.route('/api/command', methods=['POST'])
         def send_command():
-            data = request.get_json()
+            data = request.get_json(silent=True) or {}
             cmd = data.get('command')
-            if cmd:
-                node._send_command(cmd)
-                return jsonify({'success': True, 'command': cmd})
-            return jsonify({'success': False, 'error': 'No command specified'})
+            if not cmd or not isinstance(cmd, str):
+                return jsonify({'success': False, 'error': 'No command specified'}), 400
+
+            _VALID_COMMANDS = {
+                'start_training', 'stop_training', 'publish_weights',
+            }
+            if cmd not in _VALID_COMMANDS:
+                return jsonify({'success': False, 'error': f'Unknown command: {cmd}'}), 400
+
+            node._send_command(cmd)
+            return jsonify({'success': True, 'command': cmd})
 
         @app.route('/api/trigger-aggregation', methods=['POST'])
         def trigger_aggregation():

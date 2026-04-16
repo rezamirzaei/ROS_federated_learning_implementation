@@ -13,12 +13,14 @@ import pytest
 import numpy as np
 import torch
 import sys
-import os
+from pathlib import Path
 
-# Add source to path for imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src', 'fl_robots', 'fl_robots'))
+# Ensure fl_robots is importable
+_src = str(Path(__file__).resolve().parent.parent / "src" / "fl_robots")
+if _src not in sys.path:
+    sys.path.insert(0, _src)
 
-from models.simple_nn import (
+from fl_robots.models.simple_nn import (
     SimpleNavigationNet,
     ObstacleAvoidanceNet,
     federated_averaging,

@@ -102,9 +102,10 @@ class CoordinatorNode(Node):
         self.registered_robots: Dict[str, Dict[str, Any]] = {}
         self.round_participants: set = set()
 
-        # Training history
+        # Training history (bounded)
         self.round_stats: List[RoundStats] = []
         self.global_metrics: List[Dict[str, Any]] = []
+        self._max_history = 500
 
         # QoS profiles
         qos_reliable = QoSProfile(
@@ -218,6 +219,8 @@ class CoordinatorNode(Node):
             data = json.loads(msg.data)
 
             self.global_metrics.append(data)
+            if len(self.global_metrics) > self._max_history:
+                self.global_metrics = self.global_metrics[-self._max_history:]
 
             round_num = data.get('round', 0)
 
@@ -316,7 +319,7 @@ class CoordinatorNode(Node):
             if self.current_round < self.config.total_rounds:
                 self._start_training_round()
             else:
-                self._finish_training()
+                self._log_milestone()
 
     def _handle_evaluating(self):
         """Evaluate global model performance."""
@@ -335,7 +338,7 @@ class CoordinatorNode(Node):
         if self.current_round < self.config.total_rounds:
             self._start_training_round()
         else:
-            self._finish_training()
+            self._log_milestone()
 
     def _handle_error_recovery(self):
         """Attempt to recover from error state."""
@@ -374,8 +377,8 @@ class CoordinatorNode(Node):
         """Request aggregation from the aggregator."""
         self._send_command('publish_weights')
 
-    def _finish_training(self):
-        """Log training milestone and continue training."""
+    def _log_milestone(self):
+        """Log training milestone and continue to the next batch of rounds."""
         self.get_logger().info('=' * 50)
         self.get_logger().info(f'TRAINING MILESTONE: {self.current_round} rounds completed')
         self.get_logger().info('=' * 50)

@@ -23,6 +23,7 @@ from std_msgs.msg import String
 import json
 import time
 import os
+import csv
 from typing import Dict, List, Any
 from collections import defaultdict
 from datetime import datetime
@@ -58,7 +59,8 @@ class MonitorNode(Node):
 
         self.get_logger().info('Initializing Training Monitor')
 
-        # Metrics storage
+        # Metrics storage (bounded to prevent unbounded memory growth)
+        self._max_metrics_per_robot = 500
         self.robot_metrics: Dict[str, List[Dict]] = defaultdict(list)
         self.aggregation_metrics: List[Dict] = []
         self.coordinator_status: Dict[str, Any] = {}
@@ -176,6 +178,9 @@ class MonitorNode(Node):
                 'accuracy': data.get('last_accuracy'),
                 'timestamp': data.get('timestamp', time.time())
             })
+            # Trim to bounded size
+            if len(self.robot_metrics[robot_id]) > self._max_metrics_per_robot:
+                self.robot_metrics[robot_id] = self.robot_metrics[robot_id][-self._max_metrics_per_robot:]
             self.robot_participation[robot_id] = data.get('training_round', 0)
 
     def _handle_robot_metrics(self, robot_id: str, msg: String):
@@ -297,14 +302,13 @@ class MonitorNode(Node):
         # Save CSV for easy analysis
         if self.aggregation_metrics:
             csv_file = os.path.join(self.output_dir, 'aggregation_history.csv')
-            with open(csv_file, 'w') as f:
-                headers = ['round', 'num_participants', 'total_samples',
-                          'aggregation_time', 'mean_divergence', 'timestamp']
-                f.write(','.join(headers) + '\n')
-
+            headers = ['round', 'num_participants', 'total_samples',
+                       'aggregation_time', 'mean_divergence', 'timestamp']
+            with open(csv_file, 'w', newline='') as f:
+                writer = csv.DictWriter(f, fieldnames=headers, extrasaction='ignore')
+                writer.writeheader()
                 for m in self.aggregation_metrics:
-                    values = [str(m.get(h, '')) for h in headers]
-                    f.write(','.join(values) + '\n')
+                    writer.writerow({h: m.get(h, '') for h in headers})
 
         self.get_logger().info(f'Results saved to {self.output_dir}')
 

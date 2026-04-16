@@ -124,9 +124,10 @@ class AggregatorNode(BaseNode):
         self.global_model = SimpleNavigationNet(input_dim=12, hidden_dim=64, output_dim=4)
         self.global_weights = self.global_model.get_weights()
 
-        # Training history
-        self.aggregation_history = []
-        self.divergence_history = []
+        # Training history (bounded to prevent unbounded memory)
+        self.aggregation_history: list[dict] = []
+        self.divergence_history: list[dict] = []
+        self._max_history = 500
 
         # QoS profiles
         qos_reliable = QoSProfile(
@@ -529,6 +530,8 @@ class AggregatorNode(BaseNode):
                 'timestamp': time.time()
             }
             self.aggregation_history.append(metrics)
+            if len(self.aggregation_history) > self._max_history:
+                self.aggregation_history = self.aggregation_history[-self._max_history:]
 
             self.get_logger().info(
                 f'Aggregation complete (round {self.current_round}): '

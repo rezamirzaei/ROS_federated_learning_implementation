@@ -3,26 +3,51 @@ Simulation data models for the standalone (non-ROS) simulation engine.
 
 These lightweight dataclasses mirror the ROS2 message types used by the
 full system, allowing the simulation to run without any ROS2 dependency.
+
+Classes
+-------
+Pose2D            – 2-D position + heading.
+TrajectoryPoint   – Single waypoint on a planned path.
+RobotState        – Full observable state of one robot.
+BusEvent          – Immutable record of a single pub/sub event.
+AggregationRecord – Summary of one federated-averaging round.
 """
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from typing import Any
+
+__all__ = [
+    "Pose2D", "TrajectoryPoint", "RobotState",
+    "BusEvent", "AggregationRecord",
+]
 
 
 @dataclass
 class Pose2D:
+    """2-D pose with heading (radians, counter-clockwise from +x)."""
+
     x: float
     y: float
     heading: float = 0.0
 
+    def distance_to(self, other: Pose2D) -> float:
+        """Euclidean distance to *other* pose."""
+        return math.hypot(self.x - other.x, self.y - other.y)
+
     def as_dict(self) -> dict[str, float]:
         return {"x": self.x, "y": self.y, "heading": self.heading}
+
+    def __repr__(self) -> str:
+        return f"Pose2D(x={self.x:.3f}, y={self.y:.3f}, heading={self.heading:.3f})"
 
 
 @dataclass
 class TrajectoryPoint:
+    """Single waypoint on a planned trajectory."""
+
     x: float
     y: float
 
@@ -32,6 +57,8 @@ class TrajectoryPoint:
 
 @dataclass
 class RobotState:
+    """Full observable state of a single robot agent."""
+
     robot_id: str
     pose: Pose2D
     velocity: tuple[float, float]
@@ -66,6 +93,8 @@ class RobotState:
 
 @dataclass(frozen=True)
 class BusEvent:
+    """Immutable record of a single message-bus event."""
+
     timestamp: float
     topic: str
     source: str
@@ -82,6 +111,8 @@ class BusEvent:
 
 @dataclass
 class AggregationRecord:
+    """Summary metrics for one federated-averaging round."""
+
     round_id: int
     participants: int
     mean_loss: float

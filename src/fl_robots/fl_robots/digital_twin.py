@@ -165,18 +165,11 @@ class DigitalTwinNode(Node):
 
             with self.state_lock:
                 if robot_id not in self.state.robots:
-                    # Assign position on circle
-                    num_robots = len(self.state.robots)
-                    angle = (num_robots * 2 * math.pi / 6) + math.pi/2  # Max 6 robots on circle
-                    radius = 0.35
-                    x = 0.5 + radius * math.cos(angle)
-                    y = 0.5 + radius * math.sin(angle)
-
                     self.state.robots[robot_id] = RobotVisualState(
                         robot_id=robot_id,
-                        position=(x, y),
-                        angle=angle
                     )
+                    # Recalculate all positions on a circle whenever a robot is added
+                    self._recalculate_positions()
                     self.get_logger().info(f'Added robot {robot_id} to digital twin')
 
                 robot = self.state.robots[robot_id]
@@ -217,6 +210,17 @@ class DigitalTwinNode(Node):
 
         except Exception as e:
             self.get_logger().error(f'Error in coordinator callback: {e}')
+
+    def _recalculate_positions(self) -> None:
+        """Evenly distribute all robots on a circle (must hold state_lock)."""
+        num = len(self.state.robots)
+        if num == 0:
+            return
+        radius = 0.35
+        for idx, robot in enumerate(self.state.robots.values()):
+            angle = (idx * 2 * math.pi / num) + math.pi / 2
+            robot.position = (0.5 + radius * math.cos(angle), 0.5 + radius * math.sin(angle))
+            robot.angle = angle
 
     def update_visualization(self):
         """Generate and save visualization image."""

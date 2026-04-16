@@ -1,8 +1,8 @@
 """
 Distributed Model Predictive Control (MPC) planner for formation control.
 
-Each robot optimises a short horizon against goal tracking, formation
-consistency, control smoothness, and predicted inter-robot separation.
+Each robot optimises a short-horizon trajectory against goal tracking,
+control smoothness, speed cost, and collision avoidance.
 """
 
 from __future__ import annotations
@@ -12,9 +12,18 @@ from dataclasses import dataclass
 
 from .sim_models import Pose2D, RobotState, TrajectoryPoint
 
+__all__ = ["MPCPlan", "DistributedMPCPlanner"]
+
+
+def _safe_atan2(y: float, x: float) -> float:
+    """``math.atan2`` that avoids exact-zero x values."""
+    return math.atan2(y, x if x != 0.0 else 1e-9)
+
 
 @dataclass
 class MPCPlan:
+    """Result of planning for a single robot over the full horizon."""
+
     path: list[TrajectoryPoint]
     first_velocity: tuple[float, float]
     cost: float
@@ -22,15 +31,7 @@ class MPCPlan:
 
 
 class DistributedMPCPlanner:
-    """
-    Lightweight distributed MPC-style planner.
-
-    Each robot optimizes a short horizon against:
-    - goal tracking
-    - formation consistency
-    - control smoothness
-    - predicted inter-robot separation
-    """
+    """Lightweight distributed MPC-style planner."""
 
     def __init__(self, horizon: int = 8, dt: float = 0.35, max_speed: float = 0.32) -> None:
         self.horizon = horizon
@@ -43,6 +44,7 @@ class DistributedMPCPlanner:
         robots: list[RobotState],
         leader_position: tuple[float, float],
     ) -> dict[str, MPCPlan]:
+        """Solve for every robot sequentially."""
         plans: dict[str, MPCPlan] = {}
         predicted_neighbors: dict[str, list[TrajectoryPoint]] = {}
 
@@ -93,7 +95,7 @@ class DistributedMPCPlanner:
 
             path.append(best_point)
             total_cost += best_cost
-            current = Pose2D(best_point.x, best_point.y, math.atan2(best_velocity[1], best_velocity[0] or 1e-6))
+            current = Pose2D(best_point.x, best_point.y, _safe_atan2(best_velocity[1], best_velocity[0]))
             current_velocity = best_velocity
 
         tracking_error = math.dist((path[0].x, path[0].y), target) if path else math.dist((current.x, current.y), target)
@@ -119,13 +121,12 @@ class DistributedMPCPlanner:
         )
 
         angles = (-0.75, -0.35, 0.0, 0.35, 0.75)
-        candidates = [(0.0, 0.0), current_velocity, desired]
-        base_angle = math.atan2(desired[1], desired[0] or 1e-6)
+        candidates: list[tuple[float, float]] = [(0.0, 0.0), current_velocity, desired]
+        base_angle = _safe_atan2(desired[1], desired[0])
 
         for offset in angles:
             angle = base_angle + offset
-            speed = self.max_speed
-            candidates.append((speed * math.cos(angle), speed * math.sin(angle)))
+            candidates.append((self.max_speed * math.cos(angle), self.max_speed * math.sin(angle)))
 
         return candidates
 

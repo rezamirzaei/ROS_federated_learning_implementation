@@ -24,7 +24,7 @@ class SimpleNavigationNet(nn.Module):
     """
 
     def __init__(self, input_dim: int = 12, hidden_dim: int = 64, output_dim: int = 4):
-        super(SimpleNavigationNet, self).__init__()
+        super().__init__()
 
         self.input_dim = input_dim
         self.hidden_dim = hidden_dim
@@ -153,15 +153,18 @@ class ObstacleAvoidanceNet(nn.Module):
     """
 
     def __init__(self, input_channels: int = 1, output_dim: int = 4):
-        super(ObstacleAvoidanceNet, self).__init__()
+        super().__init__()
 
         # Convolutional layers for feature extraction
         self.conv1 = nn.Conv2d(input_channels, 16, kernel_size=5, stride=2, padding=2)
         self.conv2 = nn.Conv2d(16, 32, kernel_size=3, stride=2, padding=1)
         self.conv3 = nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1)
 
+        # Adaptive pooling so the network handles arbitrary spatial sizes
+        self.adaptive_pool = nn.AdaptiveAvgPool2d((4, 4))
+
         # Fully connected layers
-        self.fc1 = nn.Linear(64 * 8 * 8, 128)
+        self.fc1 = nn.Linear(64 * 4 * 4, 128)
         self.fc2 = nn.Linear(128, output_dim)
 
         self._init_weights()
@@ -185,6 +188,7 @@ class ObstacleAvoidanceNet(nn.Module):
         x = F.relu(self.conv2(x))
         x = F.relu(self.conv3(x))
 
+        x = self.adaptive_pool(x)
         x = x.view(x.size(0), -1)
         x = F.relu(self.fc1(x))
         x = self.fc2(x)

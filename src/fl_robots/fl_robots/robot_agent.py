@@ -181,8 +181,9 @@ class RobotAgentNode(Node):
         # Training state
         self.is_training = False
         self.training_round = 0
-        self.local_loss_history = []
-        self.accuracy_history = []
+        self.local_loss_history: list[float] = []
+        self.accuracy_history: list[float] = []
+        self._max_history = 200  # prevent unbounded memory growth
         self.training_lock = threading.Lock()
         self._cancel_requested = False
 
@@ -410,8 +411,7 @@ class RobotAgentNode(Node):
             accuracy = 100.0 * correct / total
             duration = time.time() - start_time
 
-            self.local_loss_history.append(avg_loss)
-            self.accuracy_history.append(accuracy)
+            self._record_metrics(avg_loss, accuracy)
 
             layer_norms = [float(torch.norm(p.data).item()) for p in self.model.parameters()]
 
@@ -627,8 +627,7 @@ class RobotAgentNode(Node):
             avg_loss = total_loss / (self.local_epochs * len(dataloader))
             accuracy = 100.0 * correct / total
 
-            self.local_loss_history.append(avg_loss)
-            self.accuracy_history.append(accuracy)
+            self._record_metrics(avg_loss, accuracy)
 
             self.get_logger().info(
                 f'{self.robot_id}: Training complete - '
@@ -681,6 +680,14 @@ class RobotAgentNode(Node):
 
         self.get_logger().info(
             f'{self.robot_id}: Published local weights (round {self.training_round})')
+
+    def _record_metrics(self, loss: float, accuracy: float) -> None:
+        """Append loss/accuracy and trim to bounded history."""
+        self.local_loss_history.append(loss)
+        self.accuracy_history.append(accuracy)
+        if len(self.local_loss_history) > self._max_history:
+            self.local_loss_history = self.local_loss_history[-self._max_history:]
+            self.accuracy_history = self.accuracy_history[-self._max_history:]
 
     # ────────────────────────────────────────────────────────────────
     # Inference
