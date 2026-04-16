@@ -153,15 +153,44 @@ class QPMPCPlanner:
         robots: list[RobotState],
         leader_position: tuple[float, float],
     ) -> dict[str, MPCPlan]:
-        plans: dict[str, MPCPlan] = {}
-        predicted_neighbors: dict[str, list[TrajectoryPoint]] = {}
+        """Solve with a single static reference point per robot. Backward
+        compatible; delegates to :meth:`solve_with_refs` internally."""
+        refs: dict[str, list[tuple[float, float]]] = {}
         for robot in robots:
-            target = (
+            tgt = (
                 leader_position[0] + robot.formation_offset[0],
                 leader_position[1] + robot.formation_offset[1],
             )
+            refs[robot.robot_id] = [tgt] * self.horizon
+        return self.solve_with_refs(robots, refs)
+
+    def solve_with_refs(
+        self,
+        robots: list[RobotState],
+        refs: dict[str, list[tuple[float, float]]],
+    ) -> dict[str, MPCPlan]:
+        """Solve with per-robot, per-step horizon-length references.
+
+        Each robot's reference is a list of ``(x, y)`` tuples of length
+        ``horizon``. Short sequences are padded with their last point;
+        long ones are truncated. This lets callers express time-varying
+        goals (e.g. an anticipated leader trajectory or a moving-target
+        extrapolation from the α-β predictor) without touching the QP
+        formulation.
+        """
+        plans: dict[str, MPCPlan] = {}
+        predicted_neighbors: dict[str, list[TrajectoryPoint]] = {}
+        for robot in robots:
+            ref_seq = list(refs.get(robot.robot_id, ()))
+            if not ref_seq:
+                ref_seq = [(robot.pose.x, robot.pose.y)]
+            if len(ref_seq) < self.horizon:
+                ref_seq = ref_seq + [ref_seq[-1]] * (self.horizon - len(ref_seq))
+            elif len(ref_seq) > self.horizon:
+                ref_seq = ref_seq[: self.horizon]
+
             t0 = time.perf_counter()
-            plan = self._plan_robot(robot, target, predicted_neighbors, robots)
+            plan = self._plan_robot(robot, ref_seq, predicted_neighbors, robots)
             self.last_solve_time_ms[robot.robot_id] = (time.perf_counter() - t0) * 1e3
             self.last_control_effort[robot.robot_id] = math.hypot(*plan.first_velocity)
             self.last_tracking_error[robot.robot_id] = plan.tracking_error
@@ -209,7 +238,7 @@ class QPMPCPlanner:
     def _plan_robot(
         self,
         robot: RobotState,
-        target: tuple[float, float],
+        ref_seq: list[tuple[float, float]],
         predicted_neighbors: dict[str, list[TrajectoryPoint]],
         all_robots: list[RobotState],
     ) -> MPCPlan:
@@ -237,7 +266,11 @@ class QPMPCPlanner:
         dt = self.dt
         x0 = _np.array([robot.pose.x, robot.pose.y], dtype=float)
         v_prev = _np.array(robot.velocity, dtype=float)
-        tgt = _np.array(target, dtype=float)
+        # Stack the reference sequence into a flat (2N,) vector.
+        tgt = _np.array(ref_seq[-1], dtype=float)  # last point — for tracking_error only
+        p_ref = _np.asarray(ref_seq, dtype=float).reshape(-1)
+        if p_ref.shape[0] != 2 * N:  # defensive; solve_with_refs already pads
+            p_ref = _np.tile(tgt, N)
 
         # Build the cumulative-sum matrix S such that positions_k = x0 + dt · S_k · u
         #   where S_k is the k-th row of a lower-triangular block of 2×2 identities.
@@ -248,9 +281,8 @@ class QPMPCPlanner:
                 S[2 * k, 2 * j] = 1.0
                 S[2 * k + 1, 2 * j + 1] = 1.0
 
-        # Reference: track the target at every step (constant ref is fine for
-        # formation hold; for leader-following the leader traj would vary).
-        p_ref = _np.tile(tgt, N)
+        # Reference comes from the per-step ``ref_seq`` assembled above;
+        # ``x0_tile`` broadcasts the current position across the horizon.
         x0_tile = _np.tile(x0, N)
 
         # Stage weights: per-step Q, with a heavier terminal block on the
@@ -405,7 +437,7 @@ class QPMPCPlanner:
             path.append(TrajectoryPoint(float(pos[0]), float(pos[1])))
 
         first_velocity = (float(u[0]), float(u[1]))
-        tracking_error = math.dist((path[-1].x, path[-1].y), target)
+        tracking_error = math.dist((path[-1].x, path[-1].y), ref_seq[-1])
         total_cost = float(0.5 * u @ P @ u + q @ u)
 
         return MPCPlan(

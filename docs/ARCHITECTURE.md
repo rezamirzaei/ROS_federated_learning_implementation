@@ -180,9 +180,43 @@ true target stays fixed until one of the robots closes to within
 incremented, a fresh target is spawned uniformly inside
 `[-capture_bounds, capture_bounds]²` (and at least `1.5·capture_radius`
 from every robot), and both the TOA estimator and the constant-velocity
-predictor are reset around the new target. Every capture is also
-published on the `/localization/capture` topic and appended to the
-`capture_events` ring buffer for the dashboard.
+predictor are reset around the new target.
+
+Game-balance knobs:
+
+* **`cfg.capture_grace_ticks`** — no captures fire for this many ticks
+  after any capture. Gives displaced robots time to react.
+* **`cfg.capture_cooldown_ticks`** — the most recent capturer is
+  ineligible for a capture during this window, so the same robot can't
+  camp every respawn.
+* **`cfg.capture_win_score`** — first robot to reach this score is
+  declared the winner; a `kind='win'` event is published on
+  `/localization/capture` and `SimulationEngine.winner_id` is set until
+  the next reset. New captures still count after that — useful for
+  endless mode.
+
+Every capture is published on the `/localization/capture` topic and
+appended to `capture_events` for the dashboard.
+
+### Reference trajectories (per-robot, horizon-length)
+
+Both planners expose `solve_with_refs(robots, refs)` alongside the
+legacy `solve(robots, leader_position)`. A "ref" is a list of
+`(x, y)` tuples of length `horizon`, one per planning step — so callers
+can feed anticipated trajectories (a moving leader, a predicted
+target, a choreographed role-based routine) instead of a single point.
+`solve()` is now a thin wrapper that builds a constant ref from the
+leader + formation_offset contract, so existing callers are unaffected.
+
+The standalone simulation takes advantage of this:
+
+* In **formation mode**, the per-step ref extrapolates the leader's
+  Lissajous motion and the formation-slot rotation forward over the
+  horizon — followers plan against *where they need to be*, not a
+  one-step-ago snapshot.
+* In **capture mode**, each robot's ref is its TOA estimate shifted by
+  the α-β predictor's projected target motion at each step — so
+  chasers anticipate the target rather than lagging it.
 
 ## Observability pipeline
 
