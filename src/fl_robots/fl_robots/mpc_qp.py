@@ -18,12 +18,19 @@ from :mod:`fl_robots.mpc` remains the default planner.
 from __future__ import annotations
 
 import math
+import time
 from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from .mpc import MPCConfig, MPCPlan, _safe_atan2
-from .sim_models import Pose2D, RobotState, TrajectoryPoint
+from .sim_models import (
+    MPCRobotDiagnostic,
+    MPCSystemDiagnostic,
+    Pose2D,
+    RobotState,
+    TrajectoryPoint,
+)
 
 if TYPE_CHECKING:  # pragma: no cover
     pass
@@ -86,6 +93,9 @@ class QPMPCPlanner:
         # Iteration stats for observability and tests.
         self.last_iterations: dict[str, int] = {}
         self.last_status: dict[str, str] = {}
+        self.last_solve_time_ms: dict[str, float] = {}
+        self.last_control_effort: dict[str, float] = {}
+        self.last_tracking_error: dict[str, float] = {}
 
     # Public API identical to the grid planner — drop-in replacement.
     def solve(
@@ -100,10 +110,49 @@ class QPMPCPlanner:
                 leader_position[0] + robot.formation_offset[0],
                 leader_position[1] + robot.formation_offset[1],
             )
+            t0 = time.perf_counter()
             plan = self._plan_robot(robot, target, predicted_neighbors, robots)
+            self.last_solve_time_ms[robot.robot_id] = (time.perf_counter() - t0) * 1e3
+            self.last_control_effort[robot.robot_id] = math.hypot(*plan.first_velocity)
+            self.last_tracking_error[robot.robot_id] = plan.tracking_error
             plans[robot.robot_id] = plan
             predicted_neighbors[robot.robot_id] = plan.path
         return plans
+
+    def diagnostics(
+        self, tick: int, robots: list[RobotState]
+    ) -> tuple[MPCSystemDiagnostic, list[MPCRobotDiagnostic]]:
+        """Return last-solve diagnostics tagged with ``tick``."""
+        per_robot: list[MPCRobotDiagnostic] = []
+        for robot in robots:
+            per_robot.append(
+                MPCRobotDiagnostic(
+                    tick=tick,
+                    robot_id=robot.robot_id,
+                    tracking_error=self.last_tracking_error.get(robot.robot_id, 0.0),
+                    control_effort=self.last_control_effort.get(robot.robot_id, 0.0),
+                    qp_iterations=int(self.last_iterations.get(robot.robot_id, 0)),
+                    qp_solve_time_ms=self.last_solve_time_ms.get(robot.robot_id, 0.0),
+                    qp_status=self.last_status.get(robot.robot_id, "unknown"),
+                )
+            )
+        times = list(self.last_solve_time_ms.values()) or [0.0]
+        # Per-robot QP has 2N decision vars (vx,vy stacked over the horizon)
+        # and 2N box constraints on ‖u‖∞ ≤ u_max. Report the system as the
+        # sum across robots to reflect total compute per tick.
+        n_robots = max(len(robots), 1)
+        per_robot_vars = 2 * self.horizon
+        system = MPCSystemDiagnostic(
+            tick=tick,
+            planner_kind="qp-osqp",
+            n_robots=n_robots,
+            horizon=self.horizon,
+            nu=2,
+            n_variables=per_robot_vars * n_robots,
+            n_constraints=2 * self.horizon * n_robots,
+            mean_solve_time_ms=sum(times) / len(times),
+        )
+        return system, per_robot
 
     # ── Internals ────────────────────────────────────────────────────
 

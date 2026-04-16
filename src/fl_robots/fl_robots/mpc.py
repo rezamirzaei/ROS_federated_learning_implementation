@@ -9,10 +9,17 @@ is validated at construction time via :class:`MPCConfig`.
 from __future__ import annotations
 
 import math
+import time
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from .sim_models import Pose2D, RobotState, TrajectoryPoint
+from .sim_models import (
+    MPCRobotDiagnostic,
+    MPCSystemDiagnostic,
+    Pose2D,
+    RobotState,
+    TrajectoryPoint,
+)
 
 __all__ = ["DistributedMPCPlanner", "MPCConfig", "MPCPlan"]
 
@@ -67,6 +74,10 @@ class DistributedMPCPlanner:
         self.dt = cfg.dt
         self.max_speed = cfg.max_speed
         self.safe_distance = cfg.safe_distance
+        #: Per-robot diagnostics captured during the last ``solve`` call.
+        self._last_solve_time_ms: dict[str, float] = {}
+        self._last_control_effort: dict[str, float] = {}
+        self._last_tracking_error: dict[str, float] = {}
 
     def solve(
         self,
@@ -82,11 +93,54 @@ class DistributedMPCPlanner:
                 leader_position[0] + robot.formation_offset[0],
                 leader_position[1] + robot.formation_offset[1],
             )
+            t0 = time.perf_counter()
             plan = self._plan_robot(robot, target, predicted_neighbors, robots)
+            self._last_solve_time_ms[robot.robot_id] = (time.perf_counter() - t0) * 1e3
+            self._last_control_effort[robot.robot_id] = math.hypot(*plan.first_velocity)
+            self._last_tracking_error[robot.robot_id] = plan.tracking_error
             plans[robot.robot_id] = plan
             predicted_neighbors[robot.robot_id] = plan.path
 
         return plans
+
+    # ── Diagnostics ─────────────────────────────────────────────────
+
+    def diagnostics(
+        self, tick: int, robots: list[RobotState]
+    ) -> tuple[MPCSystemDiagnostic, list[MPCRobotDiagnostic]]:
+        """Return last-solve diagnostics tagged with ``tick``.
+
+        The grid-search planner has no explicit QP, so we report ``0`` for
+        iterations and tag the status as ``grid-search`` — this keeps the
+        dashboard UI uniform across planners.
+        """
+        per_robot: list[MPCRobotDiagnostic] = []
+        for robot in robots:
+            per_robot.append(
+                MPCRobotDiagnostic(
+                    tick=tick,
+                    robot_id=robot.robot_id,
+                    tracking_error=self._last_tracking_error.get(robot.robot_id, 0.0),
+                    control_effort=self._last_control_effort.get(robot.robot_id, 0.0),
+                    qp_iterations=0,
+                    qp_solve_time_ms=self._last_solve_time_ms.get(robot.robot_id, 0.0),
+                    qp_status="grid-search",
+                )
+            )
+        times = list(self._last_solve_time_ms.values()) or [0.0]
+        # Grid search has no QP, so variables/constraints are reported as
+        # the equivalent "decision surface": horizon × (|candidates|=8).
+        system = MPCSystemDiagnostic(
+            tick=tick,
+            planner_kind="grid-search",
+            n_robots=max(len(robots), 1),
+            horizon=self.horizon,
+            nu=2,
+            n_variables=self.horizon * 8,
+            n_constraints=0,
+            mean_solve_time_ms=sum(times) / len(times),
+        )
+        return system, per_robot
 
     def _plan_robot(
         self,

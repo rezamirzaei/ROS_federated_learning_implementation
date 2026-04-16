@@ -5,14 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ROS Multi-Agent Showcase</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/standalone.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 </head>
 <body>
     <header class="hero">
         <div>
             <p class="eyebrow">ROS-inspired MVC control room</p>
-            <h1>Distributed FL + MPC Multi-Agent Dashboard</h1>
+            <h1>Distributed FL + MPC + TOA Multi-Agent Dashboard</h1>
             <p class="lede">
-                Interactive agents, topic-level message passing, federated rounds, and a distributed MPC formation controller in one browser experience.
+                Interactive agents, topic-level message passing, federated training curves, a distributed MPC formation controller with QP diagnostics, and a distributed Time-of-Arrival localizer &mdash; all in one browser experience.
             </p>
         </div>
         <div class="hero-stats">
@@ -69,15 +70,81 @@
         <section class="panel twin-panel">
             <div class="panel-header">
                 <h2>Digital Twin</h2>
-                <span class="hint">Formation, predicted horizons, and leader path</span>
+                <span class="hint">Formation, predicted horizons, and TOA target</span>
             </div>
             <svg id="digital-twin" viewBox="-4 -3 8 6" aria-label="Digital twin scene"></svg>
+            <div class="twin-legend">
+                <span><i style="background:#ff6b6b"></i>Leader (MPC reference)</span>
+                <span><i style="background:#52b788"></i>Robot</span>
+                <span><i style="background:#ffd166"></i>MPC formation slot</span>
+                <span><i class="star"></i>TOA target</span>
+                <span><i style="background:#c792ea"></i>TOA estimate</span>
+            </div>
+        </section>
+
+        <section class="panel fl-panel">
+            <div class="panel-header">
+                <h2>Federated Training Curves</h2>
+                <span class="hint">Global loss &amp; accuracy over rounds &mdash; train vs. validation</span>
+            </div>
+            <div class="chart-row">
+                <div class="chart-card">
+                    <h3>Global loss (train vs val)</h3>
+                    <canvas id="chart-global-loss"></canvas>
+                </div>
+                <div class="chart-card">
+                    <h3>Global accuracy</h3>
+                    <canvas id="chart-global-acc"></canvas>
+                </div>
+            </div>
+        </section>
+
+        <section class="panel mpc-panel">
+            <div class="panel-header">
+                <h2>MPC Problem &amp; Diagnostics</h2>
+                <span class="hint" id="mpc-size-hint">Solver: &hellip;</span>
+            </div>
+            <details class="mpc-explainer">
+                <summary>What is this MPC solving?</summary>
+                <div id="mpc-explainer-body"><p>Loading explainer&hellip;</p></div>
+            </details>
+            <div class="chart-row">
+                <div class="chart-card">
+                    <h3>Tracking error</h3>
+                    <canvas id="chart-mpc-track"></canvas>
+                </div>
+                <div class="chart-card">
+                    <h3>Control effort</h3>
+                    <canvas id="chart-mpc-effort"></canvas>
+                </div>
+                <div class="chart-card">
+                    <h3>QP solve time (ms)</h3>
+                    <canvas id="chart-mpc-solve"></canvas>
+                </div>
+            </div>
+        </section>
+
+        <section class="panel toa-panel">
+            <div class="panel-header">
+                <h2>Distributed TOA Localization</h2>
+                <span class="hint">Dual-ascent estimator (arXiv:2308.16737)</span>
+            </div>
+            <div class="chart-row">
+                <div class="chart-card">
+                    <h3>Mean RMSE vs ground truth</h3>
+                    <canvas id="chart-toa-rmse"></canvas>
+                </div>
+                <div class="chart-card">
+                    <h3>Consensus gap (max pairwise)</h3>
+                    <canvas id="chart-toa-gap"></canvas>
+                </div>
+            </div>
         </section>
 
         <section class="panel">
             <div class="panel-header">
                 <h2>Robot Agents</h2>
-                <span class="hint">Local telemetry and FL progress</span>
+                <span class="hint">Local telemetry, FL progress, per-robot loss curve</span>
             </div>
             <div id="robots-grid" class="robots-grid"></div>
         </section>

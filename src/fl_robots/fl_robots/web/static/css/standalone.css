@@ -223,6 +223,109 @@ button:hover,
     word-break: break-word;
 }
 
+/* ─── Chart panels (FL / MPC / TOA) ───────────────────────────────── */
+
+.chart-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+    gap: 0.8rem;
+}
+
+.chart-card {
+    background: rgba(7, 15, 28, 0.55);
+    border: 1px solid rgba(82, 183, 136, 0.12);
+    border-radius: 12px;
+    padding: 0.7rem 0.8rem 0.5rem;
+    min-width: 0;
+}
+
+.chart-card h3 {
+    margin: 0 0 0.4rem;
+    font-size: 0.9rem;
+    color: #cbd5e1;
+    font-weight: 500;
+}
+
+.chart-card canvas {
+    width: 100% !important;
+    height: 14rem !important;
+}
+
+.robot-chart-wrap {
+    margin-top: 0.7rem;
+    height: 5.5rem;
+}
+
+.robot-chart-wrap canvas {
+    width: 100% !important;
+    height: 100% !important;
+}
+
+/* ─── MPC explainer disclosure ───────────────────────────────────── */
+
+.mpc-explainer {
+    background: rgba(7, 15, 28, 0.55);
+    border: 1px solid rgba(82, 183, 136, 0.12);
+    border-radius: 10px;
+    padding: 0.6rem 0.9rem;
+    margin-bottom: 0.9rem;
+    color: #cbd5e1;
+    font-size: 0.92rem;
+}
+
+.mpc-explainer summary {
+    cursor: pointer;
+    font-weight: 600;
+    color: var(--blue);
+}
+
+.mpc-explainer p { margin: 0.4rem 0; }
+.mpc-explainer ul { margin: 0.3rem 0 0.3rem 1.2rem; padding: 0; }
+.mpc-explainer code {
+    background: rgba(77, 171, 247, 0.08);
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 0.85rem;
+}
+
+/* ─── Digital twin legend ────────────────────────────────────────── */
+
+.twin-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.9rem;
+    margin-top: 0.5rem;
+    font-size: 0.82rem;
+    color: var(--muted);
+}
+
+.twin-legend span {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+}
+
+.twin-legend i {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+}
+
+.twin-legend i.star {
+    background: #ffd166;
+    clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);
+    border-radius: 0;
+    width: 14px;
+    height: 14px;
+}
+
+/* ─── Layout tweaks: chart panels span full width ───────────────── */
+
+.fl-panel, .mpc-panel, .toa-panel {
+    grid-column: 1 / -1;
+}
+
 @media (max-width: 1080px) {
     .layout {
         grid-template-columns: 1fr;
@@ -241,4 +344,3 @@ button:hover,
         align-items: start;
     }
 }
-

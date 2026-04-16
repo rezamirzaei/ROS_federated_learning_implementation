@@ -24,8 +24,14 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 __all__ = [
     "AggregationRecord",
     "BusEvent",
+    "GlobalMetricPoint",
+    "MPCRobotDiagnostic",
+    "MPCSystemDiagnostic",
     "Pose2D",
+    "RobotMetricPoint",
     "RobotState",
+    "TOAEstimatePoint",
+    "TOASnapshot",
     "TrajectoryPoint",
 ]
 
@@ -164,3 +170,122 @@ class RobotState(BaseModel):
             "last_plan_cost": self.last_plan_cost,
             "last_tracking_error": self.last_tracking_error,
         }
+
+
+# ── FL history points (frozen, append-only ring buffer entries) ──────
+
+
+class GlobalMetricPoint(BaseModel):
+    """One global aggregation sample for time-series plotting."""
+
+    model_config = ConfigDict(frozen=True, slots=True)
+
+    tick: int = Field(..., ge=0)
+    round_id: int = Field(..., ge=0)
+    timestamp: float = Field(..., ge=0.0)
+    mean_loss: float = Field(..., ge=0.0)
+    val_loss: float = Field(..., ge=0.0, description="Validation-loss proxy (mean_loss * 1.05 + ε)")
+    mean_accuracy: float
+    val_accuracy: float
+    mean_divergence: float = Field(..., ge=0.0)
+    formation_error: float = Field(..., ge=0.0)
+
+    def as_dict(self) -> dict[str, float | int]:
+        return self.model_dump()
+
+
+class RobotMetricPoint(BaseModel):
+    """One per-robot training sample for per-agent time-series."""
+
+    model_config = ConfigDict(frozen=True, slots=True)
+
+    robot_id: str = Field(..., min_length=1)
+    tick: int = Field(..., ge=0)
+    round_id: int = Field(..., ge=0)
+    timestamp: float = Field(..., ge=0.0)
+    local_loss: float = Field(..., ge=0.0)
+    local_accuracy: float
+
+    def as_dict(self) -> dict[str, float | int | str]:
+        return self.model_dump()
+
+
+# ── MPC diagnostics ──────────────────────────────────────────────────
+
+
+class MPCRobotDiagnostic(BaseModel):
+    """Per-robot MPC solve diagnostics for one tick."""
+
+    model_config = ConfigDict(frozen=True, slots=True)
+
+    tick: int = Field(..., ge=0)
+    robot_id: str = Field(..., min_length=1)
+    tracking_error: float = Field(..., ge=0.0)
+    control_effort: float = Field(..., ge=0.0, description="‖u₀‖₂ — first-step control norm")
+    qp_iterations: int = Field(..., ge=0)
+    qp_solve_time_ms: float = Field(..., ge=0.0)
+    qp_status: str
+
+    def as_dict(self) -> dict[str, float | int | str]:
+        return self.model_dump()
+
+
+class MPCSystemDiagnostic(BaseModel):
+    """System-wide MPC problem geometry for the QP panel."""
+
+    model_config = ConfigDict(frozen=True, slots=True)
+
+    tick: int = Field(..., ge=0)
+    planner_kind: str
+    n_robots: int = Field(..., ge=1)
+    horizon: int = Field(..., ge=1)
+    nu: int = Field(..., ge=1, description="Control dimension per step")
+    n_variables: int = Field(..., ge=1)
+    n_constraints: int = Field(..., ge=0)
+    mean_solve_time_ms: float = Field(..., ge=0.0)
+
+    def as_dict(self) -> dict[str, float | int | str]:
+        return self.model_dump()
+
+
+# ── TOA localization ─────────────────────────────────────────────────
+
+
+class TOAEstimatePoint(BaseModel):
+    """Per-robot estimate of the target position at one tick."""
+
+    model_config = ConfigDict(frozen=True, slots=True)
+
+    robot_id: str = Field(..., min_length=1)
+    x: float
+    y: float
+    residual: float = Field(..., ge=0.0)
+    error: float = Field(..., ge=0.0, description="‖estimate − ground_truth‖₂")
+
+    def as_dict(self) -> dict[str, float | str]:
+        return self.model_dump()
+
+
+class TOASnapshot(BaseModel):
+    """Summary of a TOA localization step — ground truth, estimates, RMSE."""
+
+    model_config = ConfigDict(frozen=True, slots=True)
+
+    tick: int = Field(..., ge=0)
+    timestamp: float = Field(..., ge=0.0)
+    target_x: float
+    target_y: float
+    mean_rmse: float = Field(..., ge=0.0)
+    consensus_gap: float = Field(..., ge=0.0)
+    estimates: list[TOAEstimatePoint]
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "tick": self.tick,
+            "timestamp": self.timestamp,
+            "target": {"x": self.target_x, "y": self.target_y},
+            "mean_rmse": self.mean_rmse,
+            "consensus_gap": self.consensus_gap,
+            "estimates": [e.as_dict() for e in self.estimates],
+        }
+

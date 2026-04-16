@@ -37,7 +37,7 @@ from .simulation import SimulationEngine
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["OPENAPI_SCHEMA", "CommandRequest", "create_app", "main"]
+__all__ = ["MPC_EXPLAINER", "OPENAPI_SCHEMA", "CommandRequest", "create_app", "main"]
 
 #: Set ``FL_ROBOTS_API_TOKEN=<token>`` in the environment to require a
 #: matching ``Authorization: Bearer <token>`` header on mutating endpoints.
@@ -51,6 +51,59 @@ _RATE_MAX_HITS = int(os.environ.get("FL_ROBOTS_RATE_MAX_HITS", "30"))
 #: ``/api/ready`` returns 503. Keeps Kubernetes from serving traffic to a
 #: process whose background thread has hung.
 _READY_STALE_S = float(os.environ.get("FL_ROBOTS_READY_STALE_S", "5"))
+
+
+def _parse_limit(raw: str | None) -> int | None:
+    """Parse a ``?limit=N`` query arg; clamp to a safe maximum."""
+    if raw is None:
+        return None
+    try:
+        n = int(raw)
+    except (TypeError, ValueError):
+        return None
+    return max(1, min(n, 2000))
+
+
+#: Human-readable description of the MPC QP. Served at ``/api/mpc/explainer``
+#: so the dashboard can render LaTeX-ish formulas without hard-coding them in
+#: JS. Kept plain-text / Markdown so it renders in any client.
+MPC_EXPLAINER: dict = {
+    "title": "Distributed MPC for Formation Control",
+    "summary": (
+        "Each robot solves its own small quadratic program every tick and "
+        "shares predicted trajectories with neighbours. The team tracks a "
+        "moving leader while avoiding collisions."
+    ),
+    "decision_variables": (
+        "u = [vx₀, vy₀, …, vx_{N-1}, vy_{N-1}]  ∈ ℝ^{2N}  "
+        "— stacked velocity commands over the prediction horizon N."
+    ),
+    "dynamics": "x_{k+1} = x_k + dt · u_k  (double-integrator kinematics in 2D).",
+    "objective": (
+        "min_u  ½‖u‖²_R + ‖X(u) − X_ref‖²_Q + collision_penalty  "
+        "where X(u) = x₀ + dt · (cumulative sum of u)."
+    ),
+    "constraints": [
+        "‖u_k‖_∞ ≤ u_max   (per-axis speed box)",
+        "Soft inter-robot separation penalised inside the objective "
+        "via predicted neighbour positions (convex linearisation).",
+    ],
+    "weights": {
+        "Q (tracking)": "Pulls the terminal position toward the formation slot.",
+        "R (control)": "Damps large / jerky velocity commands.",
+        "penalty (collision)": "Quadratic bump when a neighbour is within safe_distance.",
+    },
+    "solver": (
+        "OSQP (sparse ADMM) with warm-starting from the previous tick's "
+        "primal/dual solution. Falls back to a velocity-grid heuristic if "
+        "scipy/osqp aren't installed."
+    ),
+    "distributed_aspect": (
+        "Robots solve sequentially in a round-robin; each robot's predicted "
+        "trajectory is broadcast to later robots so they see up-to-date "
+        "neighbour positions when computing their collision penalty."
+    ),
+}
 
 #: OpenAPI 3.1 schema for the mutating + introspection surface.
 OPENAPI_SCHEMA: dict = {
@@ -155,6 +208,49 @@ OPENAPI_SCHEMA: dict = {
             "get": {
                 "summary": "Prometheus scrape endpoint",
                 "responses": {"200": {"description": "text/plain metrics"}},
+            }
+        },
+        "/api/history/global": {
+            "get": {
+                "summary": "Global FL training history (loss / accuracy per round)",
+                "parameters": [
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "schema": {"type": "integer", "minimum": 1, "maximum": 2000},
+                    }
+                ],
+                "responses": {"200": {"description": "JSON series"}},
+            }
+        },
+        "/api/history/robots/{robot_id}": {
+            "get": {
+                "summary": "Per-robot training history (local loss / accuracy per tick)",
+                "parameters": [
+                    {"name": "robot_id", "in": "path", "required": True, "schema": {"type": "string"}},
+                    {"name": "limit", "in": "query", "schema": {"type": "integer"}},
+                ],
+                "responses": {"200": {"description": "JSON series"}},
+            }
+        },
+        "/api/history/mpc": {
+            "get": {
+                "summary": "MPC per-robot diagnostics history",
+                "parameters": [{"name": "limit", "in": "query", "schema": {"type": "integer"}}],
+                "responses": {"200": {"description": "JSON series with system geometry"}},
+            }
+        },
+        "/api/history/localization": {
+            "get": {
+                "summary": "Distributed TOA localization history",
+                "parameters": [{"name": "limit", "in": "query", "schema": {"type": "integer"}}],
+                "responses": {"200": {"description": "JSON series with target trajectory + RMSE"}},
+            }
+        },
+        "/api/mpc/explainer": {
+            "get": {
+                "summary": "Human-readable description of the MPC QP",
+                "responses": {"200": {"description": "JSON body (plain-text / Markdown)"}},
             }
         },
     },
@@ -297,6 +393,62 @@ def create_app(simulation: SimulationEngine | None = None) -> Flask:
     @app.get("/api/openapi.json")
     def openapi_schema():
         return jsonify(OPENAPI_SCHEMA)
+
+    @app.get("/api/history/global")
+    def history_global():
+        """Time-series of global aggregation metrics."""
+        sim = _get_simulation(app)
+        limit = _parse_limit(request.args.get("limit"))
+        with sim._lock:  # noqa: SLF001 — intentional sharing for hot paths
+            series = list(sim.global_history)
+        if limit is not None:
+            series = series[-limit:]
+        return jsonify({"series": [p.as_dict() for p in series]})
+
+    @app.get("/api/history/robots/<robot_id>")
+    def history_robot(robot_id: str):
+        """Time-series of per-robot training metrics."""
+        sim = _get_simulation(app)
+        limit = _parse_limit(request.args.get("limit"))
+        with sim._lock:  # noqa: SLF001
+            buf = sim.robot_history.get(robot_id)
+            series = list(buf) if buf else []
+        if limit is not None:
+            series = series[-limit:]
+        return jsonify({"robot_id": robot_id, "series": [p.as_dict() for p in series]})
+
+    @app.get("/api/history/mpc")
+    def history_mpc():
+        """Time-series of MPC per-robot diagnostics (tracking error, iters, solve time)."""
+        sim = _get_simulation(app)
+        limit = _parse_limit(request.args.get("limit"))
+        with sim._lock:  # noqa: SLF001
+            series = list(sim.mpc_robot_history)
+            system = sim.last_mpc_system.as_dict() if sim.last_mpc_system else None
+        if limit is not None:
+            series = series[-limit:]
+        return jsonify({"system": system, "series": [d.as_dict() for d in series]})
+
+    @app.get("/api/history/localization")
+    def history_localization():
+        """Time-series of TOA localization (target trajectory, RMSE, consensus)."""
+        sim = _get_simulation(app)
+        limit = _parse_limit(request.args.get("limit"))
+        with sim._lock:  # noqa: SLF001
+            series = list(sim.toa_history)
+        if limit is not None:
+            series = series[-limit:]
+        return jsonify(
+            {
+                "enabled": sim._toa_estimator is not None,  # noqa: SLF001
+                "series": [s.as_dict() for s in series],
+            }
+        )
+
+    @app.get("/api/mpc/explainer")
+    def mpc_explainer():
+        """Human-readable description of the MPC QP (decision vars, constraints)."""
+        return jsonify(MPC_EXPLAINER)
 
     @app.get("/metrics")
     def metrics() -> Response:

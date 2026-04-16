@@ -20,7 +20,26 @@ from pydantic import BaseModel, ConfigDict, Field
 from .controller import COMMAND_NAMES, is_valid_command, validate_command
 from .message_bus import MessageBus
 from .mpc import DistributedMPCPlanner, _safe_atan2
-from .sim_models import AggregationRecord, Pose2D, RobotState
+from .sim_models import (
+    AggregationRecord,
+    GlobalMetricPoint,
+    MPCRobotDiagnostic,
+    MPCSystemDiagnostic,
+    Pose2D,
+    RobotMetricPoint,
+    RobotState,
+    TOAEstimatePoint,
+    TOASnapshot,
+)
+
+try:  # Optional — TOA localization needs numpy (shipped via the ml extra).
+    from .localization import DistributedTOAEstimator, TOAConfig
+
+    _TOA_AVAILABLE = True
+except ImportError:  # pragma: no cover - numpy missing in minimal install
+    DistributedTOAEstimator = None  # type: ignore[assignment,misc]
+    TOAConfig = None  # type: ignore[assignment,misc]
+    _TOA_AVAILABLE = False
 
 __all__ = ["SimulationConfig", "SimulationEngine"]
 
@@ -36,6 +55,14 @@ class SimulationConfig(BaseModel):
     max_events: int = Field(default=300, ge=10, description="MessageBus event buffer size")
     max_aggregation_history: int = Field(default=60, ge=10)
     max_command_history: int = Field(default=30, ge=5)
+    max_history: int = Field(
+        default=512, ge=32, description="Ring-buffer depth for history time series"
+    )
+    max_snapshot_history: int = Field(
+        default=40, ge=0, description="Slice of history emitted inline in /api/status"
+    )
+    enable_localization: bool = Field(default=True, description="Run distributed TOA estimator")
+    toa_noise_std: float = Field(default=0.05, ge=0.0, le=2.0)
 
 
 class SimulationEngine:
@@ -49,6 +76,7 @@ class SimulationEngine:
         self, num_robots: int = 4, tick_interval: float = 0.45, auto_start: bool = True
     ) -> None:
         cfg = SimulationConfig(num_robots=num_robots, tick_interval=tick_interval)
+        self.cfg = cfg
         self.num_robots = cfg.num_robots
         self.tick_interval = cfg.tick_interval
         self._formation_radius = cfg.formation_radius
@@ -63,6 +91,17 @@ class SimulationEngine:
             maxlen=cfg.max_aggregation_history
         )
         self.command_history: deque[str] = deque(maxlen=cfg.max_command_history)
+        # ── Time-series ring buffers (for plotting) ─────────────────
+        self.global_history: deque[GlobalMetricPoint] = deque(maxlen=cfg.max_history)
+        self.robot_history: dict[str, deque[RobotMetricPoint]] = {}
+        self.mpc_system_history: deque[MPCSystemDiagnostic] = deque(maxlen=cfg.max_history)
+        self.mpc_robot_history: deque[MPCRobotDiagnostic] = deque(maxlen=cfg.max_history * 4)
+        self.toa_history: deque[TOASnapshot] = deque(maxlen=cfg.max_history)
+        # Latest diagnostics (also pushed to history each tick).
+        self.last_mpc_system: MPCSystemDiagnostic | None = None
+        self.last_mpc_per_robot: list[MPCRobotDiagnostic] = []
+        self.last_toa: TOASnapshot | None = None
+        # ── Flags ───────────────────────────────────────────────────
         self.training_active = False
         self.autopilot = True
         self.controller_state = "IDLE"
@@ -70,10 +109,15 @@ class SimulationEngine:
         self.tick_count = 0
         self.leader_phase = 0.0
         self.leader_position = (0.0, 0.0)
+        # Target the TOA estimator tracks (figure-8 moving beacon).
+        self.target_position: tuple[float, float] = (0.0, 0.0)
+        self._target_phase = 0.0
         self.last_aggregation: AggregationRecord | None = None
         #: Wall-clock timestamp of the last completed tick. Used by the
         #: ``/api/ready`` probe to detect a hung background thread.
         self._last_tick_time: float = time.monotonic()
+
+        self._toa_estimator: DistributedTOAEstimator | None = None  # initialised in _reset_locked
 
         self.bus.subscribe("/system/command", self._handle_command_event)
         self._reset_locked()
@@ -130,6 +174,14 @@ class SimulationEngine:
             )
 
             last_aggregation = self.last_aggregation.as_dict() if self.last_aggregation else None
+            history_slice = self.cfg.max_snapshot_history
+            global_tail = list(self.global_history)[-history_slice:]
+            robot_tail = {
+                rid: [p.as_dict() for p in list(buf)[-history_slice:]]
+                for rid, buf in self.robot_history.items()
+            }
+            mpc_tail_robot = [d.as_dict() for d in list(self.mpc_robot_history)[-history_slice:]]
+            toa_tail = [t.as_dict() for t in list(self.toa_history)[-history_slice:]]
             return {
                 "system": {
                     "controller_state": self.controller_state,
@@ -147,6 +199,20 @@ class SimulationEngine:
                     "mean_tracking_error": mean_tracking_error,
                     "last_aggregation": last_aggregation,
                     "aggregation_history": [rec.as_dict() for rec in self.aggregation_history],
+                },
+                "history": {
+                    "global": [p.as_dict() for p in global_tail],
+                    "robots": robot_tail,
+                },
+                "mpc": {
+                    "system": self.last_mpc_system.as_dict() if self.last_mpc_system else None,
+                    "per_robot": [d.as_dict() for d in self.last_mpc_per_robot],
+                    "history": mpc_tail_robot,
+                },
+                "localization": {
+                    "enabled": self._toa_estimator is not None,
+                    "current": self.last_toa.as_dict() if self.last_toa else None,
+                    "history": toa_tail,
                 },
                 "robots": robots,
                 "messages": [evt.as_dict() for evt in self.bus.recent_events(limit=80)],
@@ -206,6 +272,14 @@ class SimulationEngine:
         self.robots.clear()
         self.aggregation_history.clear()
         self.command_history.clear()
+        self.global_history.clear()
+        self.robot_history.clear()
+        self.mpc_system_history.clear()
+        self.mpc_robot_history.clear()
+        self.toa_history.clear()
+        self.last_mpc_system = None
+        self.last_mpc_per_robot = []
+        self.last_toa = None
         self.training_active = False
         self.autopilot = True
         self.controller_state = "IDLE"
@@ -213,6 +287,8 @@ class SimulationEngine:
         self.tick_count = 0
         self.leader_phase = 0.0
         self.leader_position = (0.0, 0.0)
+        self._target_phase = 0.0
+        self.target_position = (0.0, 0.0)
         self.last_aggregation = None
 
         for index in range(self.num_robots):
@@ -232,7 +308,19 @@ class SimulationEngine:
                 training_loss=1.15 + (index * 0.08),
                 accuracy=45.0 + (index * 3.5),
             )
+            self.robot_history[robot_id] = deque(maxlen=self.cfg.max_history)
             self.bus.publish("/fl/robot_status", robot_id, {"status": "registered"})
+
+        # TOA estimator is recreated on reset so learnt dual variables don't
+        # contaminate a fresh scenario. Skip quietly if NumPy isn't available.
+        if self.cfg.enable_localization and _TOA_AVAILABLE and DistributedTOAEstimator is not None:
+            self._toa_estimator = DistributedTOAEstimator(
+                robot_ids=list(self.robots),
+                config=TOAConfig(),
+                seed=self._rng.randrange(2**31),
+            )
+        else:
+            self._toa_estimator = None
 
     def _tick_locked(self) -> None:
         self.tick_count += 1
@@ -298,6 +386,44 @@ class SimulationEngine:
         if self.training_active:
             self._update_training_locked(formation_error / max(len(self.robots), 1), min_separation)
 
+        # Per-robot history — record every tick (even outside aggregation) so
+        # the local-loss curves are dense.
+        now = time.time()
+        for robot in self.robots.values():
+            buf = self.robot_history.get(robot.robot_id)
+            if buf is None:
+                buf = deque(maxlen=self.cfg.max_history)
+                self.robot_history[robot.robot_id] = buf
+            buf.append(
+                RobotMetricPoint(
+                    robot_id=robot.robot_id,
+                    tick=self.tick_count,
+                    round_id=self.current_round,
+                    timestamp=now,
+                    local_loss=robot.training_loss,
+                    local_accuracy=robot.accuracy,
+                )
+            )
+
+        # MPC diagnostics — ask the planner for last-solve timing/iters.
+        if hasattr(self.planner, "diagnostics"):
+            try:
+                system_diag, per_robot_diag = self.planner.diagnostics(
+                    self.tick_count, list(self.robots.values())
+                )
+            except Exception:  # pragma: no cover - defensive
+                system_diag, per_robot_diag = None, []
+            if system_diag is not None:
+                self.last_mpc_system = system_diag
+                self.last_mpc_per_robot = per_robot_diag
+                self.mpc_system_history.append(system_diag)
+                for d in per_robot_diag:
+                    self.mpc_robot_history.append(d)
+
+        # Distributed TOA target localization.
+        if self._toa_estimator is not None:
+            self._run_toa_locked(now)
+
         self.bus.publish(
             "/fl/coordinator_status",
             "coordinator",
@@ -308,6 +434,77 @@ class SimulationEngine:
                 "autopilot": self.autopilot,
             },
         )
+
+    def _run_toa_locked(self, now: float) -> None:
+        """Advance the moving target and run one distributed TOA update."""
+        # Figure-8 target — deterministic, easy to debug visually.
+        self._target_phase += 0.4 * self.tick_interval
+        phase = self._target_phase
+        target = (1.8 * math.sin(phase), 1.2 * math.sin(2.0 * phase))
+        self.target_position = target
+
+        positions = {rid: (r.pose.x, r.pose.y) for rid, r in self.robots.items()}
+        # Noisy TOA / range measurements.
+        measurements: dict[str, float] = {}
+        for rid, (px, py) in positions.items():
+            true_range = math.hypot(target[0] - px, target[1] - py)
+            measurements[rid] = true_range + self._rng.gauss(0.0, self.cfg.toa_noise_std)
+
+        # k-NN topology (k=2) — mirrors the paper's local-comms model.
+        neighbors = self._build_knn_topology(positions, k=2)
+
+        assert self._toa_estimator is not None
+        result = self._toa_estimator.update(
+            sensor_positions=positions,
+            measurements=measurements,
+            neighbors=neighbors,
+            ground_truth=target,
+        )
+
+        estimates = [
+            TOAEstimatePoint(
+                robot_id=rid,
+                x=xy[0],
+                y=xy[1],
+                residual=result.residuals[rid],
+                error=result.errors[rid],
+            )
+            for rid, xy in result.estimates.items()
+        ]
+        snap = TOASnapshot(
+            tick=self.tick_count,
+            timestamp=now,
+            target_x=target[0],
+            target_y=target[1],
+            mean_rmse=result.mean_rmse,
+            consensus_gap=result.consensus_gap,
+            estimates=estimates,
+        )
+        self.last_toa = snap
+        self.toa_history.append(snap)
+        self.bus.publish(
+            "/localization/toa",
+            "toa-estimator",
+            {
+                "target": {"x": target[0], "y": target[1]},
+                "mean_rmse": result.mean_rmse,
+                "consensus_gap": result.consensus_gap,
+            },
+        )
+
+    @staticmethod
+    def _build_knn_topology(
+        positions: dict[str, tuple[float, float]], k: int = 2
+    ) -> dict[str, list[str]]:
+        """Return a map ``i → k nearest neighbours by current Euclidean distance``."""
+        out: dict[str, list[str]] = {}
+        ids = list(positions)
+        for i in ids:
+            px, py = positions[i]
+            scored = [(math.hypot(px - positions[j][0], py - positions[j][1]), j) for j in ids if j != i]
+            scored.sort()
+            out[i] = [j for _, j in scored[:k]]
+        return out
 
     def _update_training_locked(self, formation_error: float, min_separation: float) -> None:
         improvement_factor = max(0.015, 0.05 - (formation_error * 0.01))
@@ -335,16 +532,37 @@ class SimulationEngine:
         if self.tick_count % 5 == 0:
             self.current_round += 1
             divergence = (formation_error * 0.35) + max(0.0, 0.8 - min_separation)
+            mean_loss = sum(r.training_loss for r in self.robots.values()) / len(self.robots)
+            mean_accuracy = sum(r.accuracy for r in self.robots.values()) / len(self.robots)
             record = AggregationRecord(
                 round_id=self.current_round,
                 participants=len(self.robots),
-                mean_loss=sum(r.training_loss for r in self.robots.values()) / len(self.robots),
-                mean_accuracy=sum(r.accuracy for r in self.robots.values()) / len(self.robots),
+                mean_loss=mean_loss,
+                mean_accuracy=mean_accuracy,
                 mean_divergence=divergence,
                 formation_error=formation_error,
             )
             self.last_aggregation = record
             self.aggregation_history.append(record)
+
+            # Validation-loss proxy: modest upward bias + a deterministic
+            # divergence-linked bump so the "val" curve sits above "train"
+            # the way a real FL run does. Documented in GlobalMetricPoint.
+            val_loss = mean_loss * 1.05 + 0.02 * divergence
+            val_accuracy = max(0.0, mean_accuracy - 0.4 - 0.5 * divergence)
+            self.global_history.append(
+                GlobalMetricPoint(
+                    tick=self.tick_count,
+                    round_id=self.current_round,
+                    timestamp=time.time(),
+                    mean_loss=mean_loss,
+                    val_loss=val_loss,
+                    mean_accuracy=mean_accuracy,
+                    val_accuracy=val_accuracy,
+                    mean_divergence=divergence,
+                    formation_error=formation_error,
+                )
+            )
 
             for robot in self.robots.values():
                 robot.training_round = self.current_round
