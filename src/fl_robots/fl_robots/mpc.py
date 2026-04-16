@@ -2,42 +2,71 @@
 Distributed Model Predictive Control (MPC) planner for formation control.
 
 Each robot optimises a short-horizon trajectory against goal tracking,
-control smoothness, speed cost, and collision avoidance.
+control smoothness, speed cost, and collision avoidance.  Configuration
+is validated at construction time via :class:`MPCConfig`.
 """
 
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+
+from pydantic import BaseModel, ConfigDict, Field
 
 from .sim_models import Pose2D, RobotState, TrajectoryPoint
 
-__all__ = ["MPCPlan", "DistributedMPCPlanner"]
+__all__ = ["MPCConfig", "MPCPlan", "DistributedMPCPlanner"]
 
 
 def _safe_atan2(y: float, x: float) -> float:
-    """``math.atan2`` that avoids exact-zero x values."""
+    """``math.atan2`` that avoids exact-zero *x* values."""
     return math.atan2(y, x if x != 0.0 else 1e-9)
 
 
-@dataclass
-class MPCPlan:
+# ── Configuration ─────────────────────────────────────────────────────
+
+
+class MPCConfig(BaseModel):
+    """Validated configuration for the MPC planner."""
+
+    model_config = ConfigDict(frozen=True, slots=True)
+
+    horizon: int = Field(default=8, ge=1, le=50, description="Prediction horizon steps")
+    dt: float = Field(default=0.35, gt=0.0, le=2.0, description="Time step (seconds)")
+    max_speed: float = Field(default=0.32, gt=0.0, le=5.0, description="Maximum velocity (m/s)")
+    safe_distance: float = Field(default=0.55, gt=0.0, description="Collision avoidance radius (m)")
+
+
+# ── Plan result ───────────────────────────────────────────────────────
+
+
+class MPCPlan(BaseModel):
     """Result of planning for a single robot over the full horizon."""
+
+    model_config = ConfigDict(frozen=True, slots=True)
 
     path: list[TrajectoryPoint]
     first_velocity: tuple[float, float]
     cost: float
-    tracking_error: float
+    tracking_error: float = Field(..., ge=0.0)
+
+
+# ── Planner ───────────────────────────────────────────────────────────
 
 
 class DistributedMPCPlanner:
     """Lightweight distributed MPC-style planner."""
 
-    def __init__(self, horizon: int = 8, dt: float = 0.35, max_speed: float = 0.32) -> None:
-        self.horizon = horizon
-        self.dt = dt
-        self.max_speed = max_speed
-        self.safe_distance = 0.55
+    def __init__(
+        self,
+        horizon: int = 8,
+        dt: float = 0.35,
+        max_speed: float = 0.32,
+    ) -> None:
+        cfg = MPCConfig(horizon=horizon, dt=dt, max_speed=max_speed)
+        self.horizon = cfg.horizon
+        self.dt = cfg.dt
+        self.max_speed = cfg.max_speed
+        self.safe_distance = cfg.safe_distance
 
     def solve(
         self,

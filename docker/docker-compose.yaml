@@ -1,7 +1,8 @@
-version: '3.8'
-
 x-common: &common
   image: fl-robots:latest
+  build:
+    context: ..
+    dockerfile: docker/Dockerfile
   environment:
     - ROS_DOMAIN_ID=42
   networks:

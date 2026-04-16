@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Coordinator Node - Training Orchestration
+Coordinator Node — Training Orchestration.
 
 This node coordinates the federated learning process across all robot agents.
 It manages training rounds, monitors progress, and ensures synchronization.
@@ -13,6 +13,17 @@ ROS2 Concepts Demonstrated:
 - Lifecycle management patterns
 """
 
+from __future__ import annotations
+
+import json
+import threading
+import time
+from dataclasses import dataclass
+from enum import Enum, auto
+from typing import Any
+
+from pydantic import BaseModel, ConfigDict, Field
+
 import rclpy
 from rclpy.node import Node
 from rclpy.callback_groups import ReentrantCallbackGroup, MutuallyExclusiveCallbackGroup
@@ -20,13 +31,6 @@ from rclpy.executors import MultiThreadedExecutor
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
 
 from std_msgs.msg import String
-
-import json
-import time
-from typing import Dict, List, Any, Optional
-from enum import Enum, auto
-from dataclasses import dataclass
-import threading
 
 
 class TrainingState(Enum):
@@ -40,14 +44,16 @@ class TrainingState(Enum):
     ERROR = auto()
 
 
-@dataclass
-class TrainingConfig:
-    """Configuration for training session."""
-    total_rounds: int = 20
-    min_robots: int = 2
-    round_timeout: float = 60.0
-    warmup_time: float = 10.0
-    evaluation_interval: int = 5
+class TrainingConfig(BaseModel):
+    """Validated configuration for a training session."""
+
+    model_config = ConfigDict(frozen=True, slots=True)
+
+    total_rounds: int = Field(default=20, ge=1, description="Total FL rounds")
+    min_robots: int = Field(default=2, ge=1, description="Minimum robots to begin")
+    round_timeout: float = Field(default=60.0, gt=0.0, description="Round timeout (s)")
+    warmup_time: float = Field(default=10.0, ge=0.0, description="Initial warmup delay (s)")
+    evaluation_interval: int = Field(default=5, ge=1, description="Evaluate every N rounds")
 
 
 @dataclass
@@ -55,10 +61,10 @@ class RoundStats:
     """Statistics for a training round."""
     round_number: int
     start_time: float
-    end_time: Optional[float] = None
+    end_time: float | None = None
     participants: int = 0
-    avg_loss: Optional[float] = None
-    avg_accuracy: Optional[float] = None
+    avg_loss: float | None = None
+    avg_accuracy: float | None = None
 
 
 class CoordinatorNode(Node):
@@ -99,12 +105,12 @@ class CoordinatorNode(Node):
         self.state_lock = threading.Lock()
 
         # Robot tracking
-        self.registered_robots: Dict[str, Dict[str, Any]] = {}
+        self.registered_robots: dict[str, dict[str, Any]] = {}
         self.round_participants: set = set()
 
         # Training history (bounded)
-        self.round_stats: List[RoundStats] = []
-        self.global_metrics: List[Dict[str, Any]] = []
+        self.round_stats: list[RoundStats] = []
+        self.global_metrics: list[dict[str, Any]] = []
         self._max_history = 500
 
         # QoS profiles

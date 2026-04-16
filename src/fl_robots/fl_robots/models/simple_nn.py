@@ -1,16 +1,24 @@
 """
-Neural Network Models for Federated Learning
+Neural Network Models for Federated Learning.
 
 This module contains the model architectures used by robot agents
-for distributed training. Demonstrates proper weight serialization
+for distributed training.  Demonstrates proper weight serialization
 for federated averaging.
 """
 
+from __future__ import annotations
+
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from typing import Dict, List, OrderedDict
-import numpy as np
+
+__all__ = [
+    "SimpleNavigationNet",
+    "ObstacleAvoidanceNet",
+    "federated_averaging",
+    "compute_gradient_divergence",
+]
 
 
 class SimpleNavigationNet(nn.Module):
@@ -96,7 +104,7 @@ class SimpleNavigationNet(nn.Module):
             logits = self.forward(x)
             return torch.argmax(logits, dim=-1).item()
 
-    def get_weights(self) -> Dict[str, np.ndarray]:
+    def get_weights(self) -> dict[str, np.ndarray]:
         """
         Extract full model state (parameters + BN running stats) as numpy arrays.
 
@@ -108,7 +116,7 @@ class SimpleNavigationNet(nn.Module):
             weights[name] = tensor.detach().cpu().numpy()
         return weights
 
-    def set_weights(self, weights: Dict[str, np.ndarray]):
+    def set_weights(self, weights: dict[str, np.ndarray]):
         """
         Set model weights from numpy arrays.
 
@@ -195,13 +203,13 @@ class ObstacleAvoidanceNet(nn.Module):
 
         return x
 
-    def get_weights(self) -> Dict[str, np.ndarray]:
+    def get_weights(self) -> dict[str, np.ndarray]:
         weights = {}
         for name, tensor in self.state_dict().items():
             weights[name] = tensor.detach().cpu().numpy()
         return weights
 
-    def set_weights(self, weights: Dict[str, np.ndarray]):
+    def set_weights(self, weights: dict[str, np.ndarray]):
         state_dict = self.state_dict()
         for name, weight in weights.items():
             if name in state_dict:
@@ -212,9 +220,9 @@ class ObstacleAvoidanceNet(nn.Module):
 
 
 def federated_averaging(
-    weights_list: List[Dict[str, np.ndarray]],
-    sample_counts: List[int] = None
-) -> Dict[str, np.ndarray]:
+    weights_list: List[dict[str, np.ndarray]],
+    sample_counts: list[int] = None
+) -> dict[str, np.ndarray]:
     """
     Perform Federated Averaging (FedAvg) on a list of model weights.
 
@@ -258,9 +266,9 @@ def federated_averaging(
 
 
 def compute_gradient_divergence(
-    weights_list: List[Dict[str, np.ndarray]],
-    global_weights: Dict[str, np.ndarray]
-) -> List[float]:
+    weights_list: List[dict[str, np.ndarray]],
+    global_weights: dict[str, np.ndarray]
+) -> list[float]:
     """
     Compute gradient divergence between local and global models.
     Useful for detecting non-IID data distribution.

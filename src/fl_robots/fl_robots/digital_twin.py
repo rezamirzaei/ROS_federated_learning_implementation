@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Digital Twin Visualization Node
+Digital Twin Visualization Node.
 
 This node provides a real-time 2D visualization of the federated learning system,
 showing:
@@ -12,6 +12,17 @@ showing:
 Uses matplotlib for visualization with ROS2 integration.
 """
 
+from __future__ import annotations
+
+import json
+import math
+import threading
+import time
+from typing import Any
+
+import numpy as np
+from pydantic import BaseModel, ConfigDict, Field
+
 import rclpy
 from rclpy.node import Node
 from rclpy.callback_groups import ReentrantCallbackGroup
@@ -19,14 +30,6 @@ from rclpy.executors import MultiThreadedExecutor
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
 
 from std_msgs.msg import String
-
-import json
-import time
-import threading
-import numpy as np
-from typing import Dict, List, Any, Optional
-from dataclasses import dataclass, field
-import math
 
 try:
     import matplotlib
@@ -40,13 +43,15 @@ except ImportError:
     MATPLOTLIB_AVAILABLE = False
 
 
-@dataclass
-class RobotVisualState:
+class RobotVisualState(BaseModel):
     """Visual state of a robot in the digital twin."""
+
+    model_config = ConfigDict(frozen=False, validate_assignment=True)
+
     robot_id: str
-    position: tuple = (0.0, 0.0)
+    position: tuple[float, float] = (0.0, 0.0)
     angle: float = 0.0
-    color: str = 'blue'
+    color: str = "blue"
     loss: float = 1.0
     accuracy: float = 0.0
     is_training: bool = False
@@ -54,10 +59,12 @@ class RobotVisualState:
     rounds_completed: int = 0
 
 
-@dataclass
-class SystemVisualState:
+class SystemVisualState(BaseModel):
     """Overall system visual state."""
-    robots: Dict[str, RobotVisualState] = field(default_factory=dict)
+
+    model_config = ConfigDict(frozen=False, validate_assignment=True)
+
+    robots: dict[str, RobotVisualState] = Field(default_factory=dict)
     global_round: int = 0
     total_aggregations: int = 0
     mean_divergence: float = 1.0
@@ -230,11 +237,11 @@ class DigitalTwinNode(Node):
         try:
             with self.state_lock:
                 state_copy = SystemVisualState(
-                    robots={k: RobotVisualState(**vars(v)) for k, v in self.state.robots.items()},
+                    robots={k: v.model_copy() for k, v in self.state.robots.items()},
                     global_round=self.state.global_round,
                     total_aggregations=self.state.total_aggregations,
                     mean_divergence=self.state.mean_divergence,
-                    coordinator_state=self.state.coordinator_state
+                    coordinator_state=self.state.coordinator_state,
                 )
 
             self._render_visualization(state_copy)

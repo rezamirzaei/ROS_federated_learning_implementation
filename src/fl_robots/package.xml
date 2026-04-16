@@ -11,7 +11,7 @@
     ROS2 Features: Topics, Services, Actions, Lifecycle Nodes, Parameters,
     QoS Profiles, Callback Groups, Multi-threaded Executors, Custom Interfaces.
   </description>
-  <maintainer email="your-email@example.com">Developer</maintainer>
+  <maintainer email="developer@fl-robots.local">Developer</maintainer>
   <license>MIT</license>
 
   <buildtool_depend>ament_python</buildtool_depend>

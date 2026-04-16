@@ -20,6 +20,8 @@ Architecture
 - Monitor Node       – real-time metrics persistence
 - Digital Twin Node  – matplotlib-based system visualisation
 - Web Dashboard Node – Flask + Socket.IO real-time UI
+
+All simulation-side data models are Pydantic-validated; see :mod:`sim_models`.
 """
 
 __version__ = "1.0.0"

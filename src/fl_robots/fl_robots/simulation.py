@@ -15,11 +15,26 @@ import time
 from collections import deque
 from typing import Any
 
+from pydantic import BaseModel, ConfigDict, Field
+
 from .message_bus import MessageBus
 from .sim_models import AggregationRecord, Pose2D, RobotState
 from .mpc import DistributedMPCPlanner, _safe_atan2
 
-__all__ = ["SimulationEngine"]
+__all__ = ["SimulationConfig", "SimulationEngine"]
+
+
+class SimulationConfig(BaseModel):
+    """Validated configuration for the standalone simulation engine."""
+
+    model_config = ConfigDict(frozen=True, slots=True)
+
+    num_robots: int = Field(default=4, ge=1, le=20, description="Number of simulated robots")
+    tick_interval: float = Field(default=0.45, gt=0.0, le=5.0, description="Seconds between ticks")
+    formation_radius: float = Field(default=1.4, gt=0.0, description="Initial formation radius")
+    max_events: int = Field(default=300, ge=10, description="MessageBus event buffer size")
+    max_aggregation_history: int = Field(default=60, ge=10)
+    max_command_history: int = Field(default=30, ge=5)
 
 
 class SimulationEngine:
@@ -31,17 +46,19 @@ class SimulationEngine:
     })
 
     def __init__(self, num_robots: int = 4, tick_interval: float = 0.45, auto_start: bool = True) -> None:
-        self.num_robots = num_robots
-        self.tick_interval = tick_interval
+        cfg = SimulationConfig(num_robots=num_robots, tick_interval=tick_interval)
+        self.num_robots = cfg.num_robots
+        self.tick_interval = cfg.tick_interval
+        self._formation_radius = cfg.formation_radius
         self._lock = threading.RLock()
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
         self._rng = random.Random(42)
-        self.bus = MessageBus(max_events=300)
+        self.bus = MessageBus(max_events=cfg.max_events)
         self.planner = DistributedMPCPlanner()
         self.robots: dict[str, RobotState] = {}
-        self.aggregation_history: deque[AggregationRecord] = deque(maxlen=60)
-        self.command_history: deque[str] = deque(maxlen=30)
+        self.aggregation_history: deque[AggregationRecord] = deque(maxlen=cfg.max_aggregation_history)
+        self.command_history: deque[str] = deque(maxlen=cfg.max_command_history)
         self.training_active = False
         self.autopilot = True
         self.controller_state = "IDLE"
@@ -175,11 +192,10 @@ class SimulationEngine:
         self.leader_position = (0.0, 0.0)
         self.last_aggregation = None
 
-        formation_radius = 1.4
         for index in range(self.num_robots):
             angle = (2.0 * math.pi * index) / self.num_robots
             robot_id = f"robot_{index + 1}"
-            offset = (formation_radius * math.cos(angle), formation_radius * math.sin(angle))
+            offset = (self._formation_radius * math.cos(angle), self._formation_radius * math.sin(angle))
             pose = Pose2D(offset[0], offset[1], angle)
             self.robots[robot_id] = RobotState(
                 robot_id=robot_id, pose=pose, velocity=(0.0, 0.0),

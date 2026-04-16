@@ -11,7 +11,7 @@ import logging
 import threading
 import time
 from collections import defaultdict, deque
-from typing import Callable
+from collections.abc import Callable
 
 from .sim_models import BusEvent
 

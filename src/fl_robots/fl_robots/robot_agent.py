@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Robot Agent Node - Federated Learning Client
+Robot Agent Node — Federated Learning Client.
 
 This node represents a single robot in the federated learning system.
 Each robot:
@@ -22,6 +22,20 @@ ROS2 Concepts Demonstrated:
 - Multi-threaded Executor
 """
 
+from __future__ import annotations
+
+import json
+import threading
+import time
+import traceback
+from typing import Any
+
+import numpy as np
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from torch.utils.data import DataLoader, TensorDataset
+
 import rclpy
 from rclpy.node import Node
 from rclpy.action import ActionServer, CancelResponse, GoalResponse
@@ -29,20 +43,8 @@ from rclpy.callback_groups import ReentrantCallbackGroup, MutuallyExclusiveCallb
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
 
-from std_msgs.msg import String, Float32MultiArray, Float32
+from std_msgs.msg import String
 from geometry_msgs.msg import Twist
-from sensor_msgs.msg import LaserScan
-
-import torch
-import torch.nn as nn
-import torch.optim as optim
-from torch.utils.data import DataLoader, TensorDataset
-import numpy as np
-import json
-import time
-import traceback
-from typing import Dict, Any, Optional
-import threading
 
 from fl_robots.models import SimpleNavigationNet
 

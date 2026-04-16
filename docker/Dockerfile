@@ -23,6 +23,7 @@ RUN pip3 install --no-cache-dir \
 # Install other Python ML dependencies
 RUN pip3 install --no-cache-dir \
     numpy==1.24.3 \
+    pydantic \
     scipy \
     scikit-learn \
     matplotlib \

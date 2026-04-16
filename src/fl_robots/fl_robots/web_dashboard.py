@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Web Dashboard Node — MVC Architecture with WebSocket Real-time Updates
+Web Dashboard Node — MVC Architecture with WebSocket Real-time Updates.
 
 This node provides a comprehensive web-based UI for the federated learning system:
 
@@ -17,6 +17,16 @@ ROS2 Concepts Demonstrated:
 - Multi-threaded integration with Flask/Socket.IO
 """
 
+from __future__ import annotations
+
+import json
+import os
+import threading
+import time
+from collections import deque
+from pathlib import Path
+from typing import Any
+
 import rclpy
 from rclpy.node import Node
 from rclpy.callback_groups import ReentrantCallbackGroup
@@ -24,15 +34,6 @@ from rclpy.executors import MultiThreadedExecutor
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
 
 from std_msgs.msg import String
-
-import json
-import time
-import threading
-import os
-from typing import Dict, List, Any, Optional
-from dataclasses import dataclass, asdict
-from collections import deque
-from pathlib import Path
 
 try:
     from flask import Flask, render_template, jsonify, request, send_file, send_from_directory
@@ -84,15 +85,15 @@ class WebDashboardNode(Node):
 
         # ── Model: State storage ────────────────────────────────────
         self.state_lock = threading.Lock()
-        self.robots: Dict[str, Dict] = {}
+        self.robots: dict[str, Dict] = {}
         self.coordinator_state = "IDLE"
         self.current_round = 0
         self.total_aggregations = 0
         self.mean_divergence = 0.0
         self.start_time = time.time()
         self.event_log: deque = deque(maxlen=200)
-        self.loss_history: List[Dict] = []
-        self.acc_history: List[Dict] = []
+        self.loss_history: list[Dict] = []
+        self.acc_history: list[Dict] = []
 
         # QoS
         qos_reliable = QoSProfile(
@@ -121,7 +122,7 @@ class WebDashboardNode(Node):
 
         # ── Service Clients (for interactive control) ───────────────
         self.trigger_agg_client = None
-        self.update_hp_clients: Dict[str, Any] = {}
+        self.update_hp_clients: dict[str, Any] = {}
 
         if CUSTOM_INTERFACES:
             self.trigger_agg_client = self.create_client(

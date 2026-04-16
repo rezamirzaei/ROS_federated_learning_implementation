@@ -39,6 +39,7 @@ setup(
     py_modules=[],
     install_requires=[
         'setuptools',
+        'pydantic>=2.0',
         'torch',
         'numpy',
         'scikit-learn',

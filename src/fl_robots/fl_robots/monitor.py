@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Monitor Node - Real-time Metrics Visualization
+Monitor Node — Real-time Metrics Visualization.
 
 This node collects and visualizes training metrics from all components
 of the federated learning system.
@@ -12,6 +12,16 @@ ROS2 Concepts Demonstrated:
 - Timer-based periodic operations
 """
 
+from __future__ import annotations
+
+import csv
+import json
+import os
+import time
+from collections import defaultdict
+from datetime import datetime
+from typing import Any
+
 import rclpy
 from rclpy.node import Node
 from rclpy.callback_groups import ReentrantCallbackGroup
@@ -19,14 +29,6 @@ from rclpy.executors import MultiThreadedExecutor
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
 
 from std_msgs.msg import String
-
-import json
-import time
-import os
-import csv
-from typing import Dict, List, Any
-from collections import defaultdict
-from datetime import datetime
 
 
 class MonitorNode(Node):
@@ -61,15 +63,15 @@ class MonitorNode(Node):
 
         # Metrics storage (bounded to prevent unbounded memory growth)
         self._max_metrics_per_robot = 500
-        self.robot_metrics: Dict[str, List[Dict]] = defaultdict(list)
-        self.aggregation_metrics: List[Dict] = []
-        self.coordinator_status: Dict[str, Any] = {}
+        self.robot_metrics: dict[str, list[Dict]] = defaultdict(list)
+        self.aggregation_metrics: list[Dict] = []
+        self.coordinator_status: dict[str, Any] = {}
         self.start_time = time.time()
 
         # Summary statistics
         self.total_rounds = 0
         self.total_aggregations = 0
-        self.robot_participation: Dict[str, int] = defaultdict(int)
+        self.robot_participation: dict[str, int] = defaultdict(int)
 
         # QoS profiles
         qos_reliable = QoSProfile(

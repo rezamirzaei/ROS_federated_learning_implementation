@@ -10,6 +10,8 @@ This launch file demonstrates:
 - Conditional launching
 """
 
+from __future__ import annotations
+
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, GroupAction, TimerAction
 from launch.substitutions import LaunchConfiguration, PythonExpression

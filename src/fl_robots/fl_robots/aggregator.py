@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Federated Learning Aggregator Node (Lifecycle Node)
+Federated Learning Aggregator Node (Lifecycle Node).
 
 This node implements the Federated Averaging (FedAvg) algorithm server.
 It collects model weights from all robot agents and computes the weighted
@@ -20,6 +20,17 @@ Algorithm: FedAvg (McMahan et al., 2017)
 - Broadcast global model to all clients
 """
 
+from __future__ import annotations
+
+import json
+import threading
+import time
+from collections import defaultdict
+from dataclasses import dataclass, field
+from typing import Any
+
+import numpy as np
+
 import rclpy
 from rclpy.node import Node
 from rclpy.callback_groups import ReentrantCallbackGroup, MutuallyExclusiveCallbackGroup
@@ -27,14 +38,6 @@ from rclpy.executors import MultiThreadedExecutor
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
 
 from std_msgs.msg import String
-
-import numpy as np
-import json
-import time
-from typing import Dict, List, Any, Optional
-from collections import defaultdict
-import threading
-from dataclasses import dataclass, field
 
 from fl_robots.models import SimpleNavigationNet, federated_averaging, compute_gradient_divergence
 
@@ -64,10 +67,10 @@ class RobotState:
     last_seen: float
     is_active: bool = True
     rounds_participated: int = 0
-    current_weights: Optional[Dict[str, np.ndarray]] = None
+    current_weights: dict[str, np.ndarray] | None = None
     samples_trained: int = 0
-    last_loss: Optional[float] = None
-    last_accuracy: Optional[float] = None
+    last_loss: float | None = None
+    last_accuracy: float | None = None
     assigned_index: int = 0
 
 
@@ -113,10 +116,10 @@ class AggregatorNode(BaseNode):
             self.get_logger().info('Custom interfaces available')
 
         # State tracking
-        self.robots: Dict[str, RobotState] = {}
+        self.robots: dict[str, RobotState] = {}
         self.current_round = 0
-        self.pending_weights: Dict[str, Dict[str, np.ndarray]] = {}
-        self.pending_samples: Dict[str, int] = {}
+        self.pending_weights: dict[str, dict[str, np.ndarray]] = {}
+        self.pending_samples: dict[str, int] = {}
         self.state_lock = threading.Lock()
         self._is_active = True  # For non-lifecycle mode
 
@@ -346,7 +349,7 @@ class AggregatorNode(BaseNode):
         except Exception as e:
             self.get_logger().error(f'Error processing robot message: {e}')
 
-    def _handle_registration(self, data: Dict[str, Any]):
+    def _handle_registration(self, data: dict[str, Any]):
         """Handle new robot registration (topic-based)."""
         robot_id = data['robot_id']
 
@@ -428,7 +431,7 @@ class AggregatorNode(BaseNode):
         except Exception as e:
             self.get_logger().error(f'Error processing weights from {robot_id}: {e}')
 
-    def _handle_status_update(self, data: Dict[str, Any]):
+    def _handle_status_update(self, data: dict[str, Any]):
         """Handle robot status update."""
         robot_id = data['robot_id']
         with self.state_lock:
@@ -459,7 +462,7 @@ class AggregatorNode(BaseNode):
             if len(self.pending_weights) >= self.min_robots:
                 self._perform_aggregation()
 
-    def _perform_aggregation(self) -> Optional[Dict]:
+    def _perform_aggregation(self) -> dict | None:
         """
         Perform Federated Averaging on collected weights.
 
@@ -575,7 +578,7 @@ class AggregatorNode(BaseNode):
 
         self.get_logger().info(f'Published global model (round {self.current_round})')
 
-    def _publish_aggregation_metrics(self, metrics: Dict[str, Any]):
+    def _publish_aggregation_metrics(self, metrics: dict[str, Any]):
         """Publish aggregation metrics for monitoring."""
         msg = String()
         msg.data = json.dumps(metrics)
