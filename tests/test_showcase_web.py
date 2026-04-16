@@ -201,6 +201,36 @@ def test_web_routes_expose_status_and_validate_commands():
         simulation.shutdown()
 
 
+def test_standalone_template_wires_capture_panel_ids():
+    """The capture panel in the dashboard relies on specific DOM IDs that
+    ``standalone.js`` looks up at boot — if any go missing the UI silently
+    breaks. Lock them in."""
+    simulation = SimulationEngine(num_robots=2, auto_start=False)
+    app = create_app(simulation)
+    try:
+        client = app.test_client()
+        rv = client.get("/")
+        assert rv.status_code == 200
+        html = rv.data.decode("utf-8")
+        required_ids = [
+            'id="capture-hint"',
+            'id="capture-total"',
+            'id="capture-target-pos"',
+            'id="capture-radius"',
+            'id="capture-win-score"',
+            'id="capture-winner-banner"',
+            'id="capture-winner-text"',
+            'id="scoreboard"',
+            'id="capture-events"',
+        ]
+        for marker in required_ids:
+            assert marker in html, f"template missing {marker}"
+        # Panel + CSS class hooks
+        assert 'class="panel capture-panel"' in html
+    finally:
+        simulation.shutdown()
+
+
 def test_web_health_endpoint():
     simulation = SimulationEngine(num_robots=2, auto_start=False)
     app = create_app(simulation)

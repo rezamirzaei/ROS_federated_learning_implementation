@@ -83,6 +83,42 @@ def test_metrics_content_type(app_no_token):
     assert rv.content_type.startswith("text/plain")
 
 
+def test_status_exposes_full_capture_payload_for_ui(app_no_token):
+    """The standalone dashboard relies on a specific capture payload shape.
+    Lock it in so a future refactor doesn't silently break the UI."""
+    app, sim = app_no_token
+    # Drive one capture so the ``events`` array is non-empty.
+    import pytest as _pt
+    _pt.importorskip("numpy")
+    rid, robot = next(iter(sim.robots.items()))
+    robot.pose.x, robot.pose.y = sim.target_position
+    sim.step_once()
+
+    client = app.test_client()
+    rv = client.get("/api/status")
+    assert rv.status_code == 200
+    body = rv.get_json()
+
+    assert "capture" in body
+    cap = body["capture"]
+    for key in ("enabled", "target", "radius", "total_captures", "win_score",
+                "winner_id", "scoreboard", "events"):
+        assert key in cap, f"capture payload missing {key!r}"
+    assert {"x", "y"} <= set(cap["target"])
+    # Scoreboard ranked descending and includes every robot.
+    ids = {e["robot_id"] for e in cap["scoreboard"]}
+    assert ids == set(sim.robots)
+    scores = [e["score"] for e in cap["scoreboard"]]
+    assert scores == sorted(scores, reverse=True)
+    # Per-robot payload must expose capture_score for the SVG badge.
+    assert all("capture_score" in r for r in body["robots"])
+    # At least one capture event is present and has the UI's required fields.
+    assert cap["events"], "expected a capture event after driving a capture"
+    evt = cap["events"][0]
+    for key in ("tick", "robot_id", "score", "kind"):
+        assert key in evt
+
+
 # ── QP MPC ──────────────────────────────────────────────────────────
 
 osqp = pytest.importorskip("osqp")
@@ -322,6 +358,35 @@ def test_capture_mode_drives_robots_toward_estimates():
     sim.shutdown()
 
 
+def test_capture_is_instant_by_default_next_tick_eligible():
+    """With the default ``capture_grace_ticks=0``, a *different* robot can
+    score on the tick immediately following someone else's capture.
+
+    This locks in the "agents can start moving/scoring from the beginning"
+    contract — the game must not pause between captures.
+    """
+    pytest.importorskip("numpy")
+    sim = SimulationEngine(num_robots=3, tick_interval=0.4, auto_start=False)
+    assert sim.cfg.capture_grace_ticks == 0, (
+        "grace window must default to 0 so the game stays snappy"
+    )
+    ids = list(sim.robots)
+    first, second = ids[0], ids[1]
+
+    # Robot A parks on the target and captures.
+    sim.robots[first].pose.x, sim.robots[first].pose.y = sim.target_position
+    sim.step_once()
+    assert sim.robots[first].capture_score == 1
+    # On the VERY NEXT tick, a different robot (not on cooldown) must be
+    # able to claim the freshly-spawned target.
+    sim.robots[second].pose.x, sim.robots[second].pose.y = sim.target_position
+    sim.step_once()
+    assert sim.robots[second].capture_score == 1, (
+        "grace window must not block a different robot on the next tick"
+    )
+    sim.shutdown()
+
+
 def test_capture_cooldown_blocks_same_robot_from_double_scoring():
     """After a capture, the same robot is on cooldown for a few ticks."""
     pytest.importorskip("numpy")
@@ -406,3 +471,4 @@ def test_qp_planner_solve_with_refs_tracks_moving_ref():
     # Sanity: the plan progresses monotonically along +x.
     xs = [p.x for p in plan_moving.path]
     assert xs[-1] > xs[0]
+

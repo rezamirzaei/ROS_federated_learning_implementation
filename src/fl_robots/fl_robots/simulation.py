@@ -143,12 +143,13 @@ class SimulationConfig(BaseModel):
         ),
     )
     capture_grace_ticks: int = Field(
-        default=2,
+        default=0,
         ge=0,
         description=(
             "Ticks after a capture during which no new capture can fire. "
-            "Gives displaced robots time to notice the new target and "
-            "prevents double-dipping when the winner hasn't moved yet."
+            "Set to 0 (default) so a new target is up-for-grabs the very "
+            "next tick — keeps the game pace snappy. Raise this if you "
+            "want displaced robots to have a beat before the next scramble."
         ),
     )
     capture_cooldown_ticks: int = Field(

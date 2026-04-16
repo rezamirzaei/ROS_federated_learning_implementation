@@ -77,8 +77,46 @@
                 <span><i style="background:#ff6b6b"></i>Leader (MPC reference)</span>
                 <span><i style="background:#52b788"></i>Robot</span>
                 <span><i style="background:#ffd166"></i>MPC formation slot</span>
-                <span><i class="star"></i>TOA target</span>
+                <span><i class="star"></i>Target (capture prize)</span>
                 <span><i style="background:#c792ea"></i>TOA estimate</span>
+                <span><i class="capture-halo-legend"></i>Capture radius</span>
+            </div>
+        </section>
+
+        <section class="panel capture-panel">
+            <div class="panel-header">
+                <h2>Capture the Target 🎯</h2>
+                <span class="hint" id="capture-hint">Loading game state&hellip;</span>
+            </div>
+            <div id="capture-winner-banner" class="capture-winner-banner" hidden>
+                <span class="trophy">🏆</span>
+                <span id="capture-winner-text">—</span>
+            </div>
+            <div class="capture-grid">
+                <article class="capture-stat">
+                    <span class="label">Total captures</span>
+                    <strong id="capture-total">0</strong>
+                </article>
+                <article class="capture-stat">
+                    <span class="label">Target</span>
+                    <strong id="capture-target-pos">(–, –)</strong>
+                </article>
+                <article class="capture-stat">
+                    <span class="label">Radius</span>
+                    <strong id="capture-radius">–</strong>
+                </article>
+                <article class="capture-stat">
+                    <span class="label">Win at</span>
+                    <strong id="capture-win-score">–</strong>
+                </article>
+            </div>
+            <div class="scoreboard-wrap">
+                <h3>Scoreboard</h3>
+                <ol id="scoreboard" class="scoreboard"></ol>
+            </div>
+            <div class="capture-events-wrap">
+                <h3>Recent captures</h3>
+                <ul id="capture-events" class="capture-events"></ul>
             </div>
         </section>
 
