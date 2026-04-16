@@ -1,7 +1,7 @@
 x-ros-common: &ros-common
   image: fl-robots-ros:latest
   build:
-    context: ..
+    context: .
     dockerfile: docker/Dockerfile
     target: ros-runtime
   environment:
@@ -12,13 +12,13 @@ x-ros-common: &ros-common
     - ros
   restart: unless-stopped
   volumes:
-    - ../logs:/ros2_ws/logs
+    - ./logs:/ros2_ws/logs
 
 services:
   dashboard:
     image: fl-robots-standalone:latest
     build:
-      context: ..
+      context: .
       dockerfile: docker/Dockerfile
       target: standalone-runtime
     container_name: fl_dashboard
@@ -36,14 +36,13 @@ services:
   test_runner:
     image: fl-robots-test:latest
     build:
-      context: ..
+      context: .
       dockerfile: docker/Dockerfile
       target: standalone-test
     profiles:
       - tools
     command: ["python", "-m", "pytest", "tests/", "-v", "--tb=short"]
 
-  # Federated Learning Aggregator Node (Lifecycle + Services)
   aggregator:
     <<: *ros-common
     container_name: fl_aggregator
@@ -52,15 +51,14 @@ services:
       bash -c "source /ros2_ws/install/setup.bash &&
                ros2 run fl_robots aggregator"
     volumes:
-      - ../logs:/ros2_ws/logs
-      - ../models:/ros2_ws/models
+      - ./logs:/ros2_ws/logs
+      - ./models:/ros2_ws/models
     healthcheck:
       test: ["CMD", "bash", "-c", "source /ros2_ws/install/setup.bash && ros2 node list | grep -q aggregator"]
       interval: 15s
       timeout: 5s
       retries: 3
 
-  # Robot Agent 1
   robot_1:
     <<: *ros-common
     container_name: fl_robot_1
@@ -72,7 +70,6 @@ services:
       bash -c "sleep 3 && source /ros2_ws/install/setup.bash &&
                ros2 run fl_robots robot_agent --ros-args -p robot_id:=robot_1"
 
-  # Robot Agent 2
   robot_2:
     <<: *ros-common
     container_name: fl_robot_2
@@ -84,7 +81,6 @@ services:
       bash -c "sleep 3 && source /ros2_ws/install/setup.bash &&
                ros2 run fl_robots robot_agent --ros-args -p robot_id:=robot_2"
 
-  # Robot Agent 3
   robot_3:
     <<: *ros-common
     container_name: fl_robot_3
@@ -96,7 +92,6 @@ services:
       bash -c "sleep 3 && source /ros2_ws/install/setup.bash &&
                ros2 run fl_robots robot_agent --ros-args -p robot_id:=robot_3"
 
-  # Coordinator Node (State Machine Orchestrator)
   coordinator:
     <<: *ros-common
     container_name: fl_coordinator
@@ -108,10 +103,9 @@ services:
       bash -c "sleep 8 && source /ros2_ws/install/setup.bash &&
                ros2 run fl_robots coordinator"
     volumes:
-      - ../logs:/ros2_ws/logs
-      - ../models:/ros2_ws/models
+      - ./logs:/ros2_ws/logs
+      - ./models:/ros2_ws/models
 
-  # Monitor Node (Metrics Persistence)
   monitor:
     <<: *ros-common
     container_name: fl_monitor
@@ -122,10 +116,9 @@ services:
       bash -c "sleep 10 && source /ros2_ws/install/setup.bash &&
                ros2 run fl_robots monitor"
     volumes:
-      - ../logs:/ros2_ws/logs
-      - ../results:/ros2_ws/results
+      - ./logs:/ros2_ws/logs
+      - ./results:/ros2_ws/results
 
-  # Digital Twin Visualization Node
   digital_twin:
     <<: *ros-common
     container_name: fl_digital_twin
@@ -136,10 +129,9 @@ services:
       bash -c "sleep 12 && source /ros2_ws/install/setup.bash &&
                ros2 run fl_robots digital_twin"
     volumes:
-      - ../logs:/ros2_ws/logs
-      - ../results:/ros2_ws/results
+      - ./logs:/ros2_ws/logs
+      - ./results:/ros2_ws/results
 
-  # Web Dashboard Node (MVC + WebSocket)
   web_dashboard:
     <<: *ros-common
     container_name: fl_web_dashboard
@@ -152,8 +144,8 @@ services:
       bash -c "sleep 15 && source /ros2_ws/install/setup.bash &&
                ros2 run fl_robots web_dashboard"
     volumes:
-      - ../logs:/ros2_ws/logs
-      - ../results:/ros2_ws/results
+      - ./logs:/ros2_ws/logs
+      - ./results:/ros2_ws/results
     healthcheck:
       test: ["CMD", "python3", "-c", "from urllib.request import urlopen; urlopen('http://127.0.0.1:5000/api/status').read()"]
       interval: 10s

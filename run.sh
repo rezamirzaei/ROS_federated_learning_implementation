@@ -30,11 +30,10 @@ NC='\033[0m' # No Color
 
 # Project directories
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DOCKER_DIR="$SCRIPT_DIR/docker"
 LITE_IMAGE_NAME="fl-robots-standalone:latest"
 ROS_IMAGE_NAME="fl-robots-ros:latest"
 TEST_IMAGE_NAME="fl-robots-test:latest"
-COMPOSE_CMD=(docker compose)
+COMPOSE_CMD=(docker compose -f "$SCRIPT_DIR/compose.yaml")
 LITE_PROFILE="lite"
 ROS_PROFILE="ros"
 TOOLS_PROFILE="tools"
@@ -85,7 +84,7 @@ resolve_mode() {
 }
 
 service_running() {
-    cd "$DOCKER_DIR"
+    cd "$SCRIPT_DIR"
     "${COMPOSE_CMD[@]}" ps --services --status running | grep -qx "$1"
 }
 
@@ -95,10 +94,10 @@ build_image() {
     mode="$(resolve_mode "${1:-lite}")"
     print_header "Building Docker Image"
 
-    cd "$DOCKER_DIR"
+    cd "$SCRIPT_DIR"
     if [ "$mode" = "lite" ]; then
         print_msg "Building lightweight dashboard image..."
-        "${COMPOSE_CMD[@]}" --profile "$LITE_PROFILE" build dashboard
+        "${COMPOSE_CMD[@]}" build dashboard
         print_msg "Build complete: $LITE_IMAGE_NAME"
     else
         print_msg "Building full ROS image..."
@@ -113,11 +112,11 @@ start_containers() {
     mode="$(resolve_mode "${1:-lite}")"
     print_header "Starting Federated Learning System"
 
-    cd "$DOCKER_DIR"
+    cd "$SCRIPT_DIR"
     "${COMPOSE_CMD[@]}" down >/dev/null 2>&1 || true
 
     if [ "$mode" = "lite" ]; then
-        "${COMPOSE_CMD[@]}" --profile "$LITE_PROFILE" up --build -d dashboard
+        "${COMPOSE_CMD[@]}" up --build -d dashboard
         print_msg "Lightweight dashboard started at http://localhost:5000"
         print_msg "Use '$0 ros' for the full ROS multi-container stack."
     else
@@ -132,7 +131,7 @@ start_containers() {
 stop_containers() {
     print_header "Stopping Federated Learning System"
 
-    cd "$DOCKER_DIR"
+    cd "$SCRIPT_DIR"
     "${COMPOSE_CMD[@]}" down
 
     print_msg "All containers stopped."
@@ -140,7 +139,7 @@ stop_containers() {
 
 # View logs
 view_logs() {
-    cd "$DOCKER_DIR"
+    cd "$SCRIPT_DIR"
 
     if [ -z "$1" ]; then
         print_msg "Viewing all container logs (Ctrl+C to exit)..."
@@ -155,7 +154,7 @@ view_logs() {
 check_status() {
     print_header "System Status"
 
-    cd "$DOCKER_DIR"
+    cd "$SCRIPT_DIR"
     "${COMPOSE_CMD[@]}" ps
 
     if service_running dashboard; then
@@ -174,7 +173,7 @@ clean_up() {
     print_header "Cleaning Up"
 
     print_msg "Stopping containers..."
-    cd "$DOCKER_DIR"
+    cd "$SCRIPT_DIR"
     "${COMPOSE_CMD[@]}" down --volumes --remove-orphans 2>/dev/null || true
 
     print_msg "Removing Docker images..."
@@ -187,7 +186,7 @@ clean_up() {
 run_tests() {
     print_header "Running Tests"
 
-    cd "$DOCKER_DIR"
+    cd "$SCRIPT_DIR"
     "${COMPOSE_CMD[@]}" --profile "$TOOLS_PROFILE" run --rm test_runner
 }
 
@@ -195,7 +194,7 @@ run_tests() {
 show_dashboard() {
     print_header "Training Dashboard"
 
-    cd "$DOCKER_DIR"
+    cd "$SCRIPT_DIR"
     if service_running dashboard; then
         curl -fsS http://localhost:5000/api/status | python3 -c '
 import json, sys
@@ -267,6 +266,7 @@ main() {
             echo "Examples:"
             echo "  $0                  # Start the lightweight dashboard"
             echo "  $0 ros              # Start the full ROS stack"
+            echo "  docker compose up --build   # Same as the lightweight dashboard"
             echo "  $0 logs dashboard   # View dashboard logs"
             echo "  $0 logs aggregator  # View aggregator logs"
             ;;

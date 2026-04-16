@@ -62,6 +62,12 @@ cd ROS
 
 The default Docker path now launches the standalone FL + MPC dashboard in a single slim container at **http://localhost:5000**. Use `./run.sh ros` when you specifically want the original ROS2 multi-node deployment.
 
+You can also start the default lightweight container directly from the repository root with:
+
+```bash
+docker compose up --build
+```
+
 ### Standalone Dashboard (No Docker/ROS2)
 
 ```bash
