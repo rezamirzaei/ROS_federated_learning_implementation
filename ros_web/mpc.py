@@ -1,165 +1,96 @@
+"""
+Distributed Model Predictive Control (MPC) planner for robot formation.
+
+Provides a lightweight formation-control planner that can run alongside the
+federated-learning loop, demonstrating how MPC complements learned policies.
+"""
+
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
-
-from .models import Pose2D, RobotState, TrajectoryPoint
+import numpy as np
+from dataclasses import dataclass, field
+from typing import Dict, List, Tuple
 
 
 @dataclass
-class MPCPlan:
-    path: list[TrajectoryPoint]
-    first_velocity: tuple[float, float]
-    cost: float
-    tracking_error: float
+class RobotPose:
+    """2-D pose of a robot."""
+    x: float = 0.0
+    y: float = 0.0
+    theta: float = 0.0
+
+
+@dataclass
+class MPCConfig:
+    """Tunable MPC parameters."""
+    horizon: int = 10
+    dt: float = 0.1
+    max_linear_vel: float = 1.0
+    max_angular_vel: float = 1.5
+    formation_radius: float = 2.0
+    goal_weight: float = 1.0
+    formation_weight: float = 0.5
+    obstacle_weight: float = 2.0
 
 
 class DistributedMPCPlanner:
     """
-    Lightweight distributed MPC-style planner.
+    Simplified distributed MPC for multi-robot formation control.
 
-    Each robot optimizes a short horizon against:
-    - goal tracking
-    - formation consistency
-    - control smoothness
-    - predicted inter-robot separation
+    Each robot plans locally using its own pose and the *communicated*
+    poses of its neighbours.  The planner returns ``(linear_vel, angular_vel)``
+    commands that can be published on ``/{robot_id}/cmd_vel``.
     """
 
-    def __init__(self, horizon: int = 8, dt: float = 0.35, max_speed: float = 0.32) -> None:
-        self.horizon = horizon
-        self.dt = dt
-        self.max_speed = max_speed
-        self.safe_distance = 0.55
+    def __init__(self, config: MPCConfig | None = None) -> None:
+        self.config = config or MPCConfig()
+        self.poses: Dict[str, RobotPose] = {}
 
-    def solve(
-        self,
-        robots: list[RobotState],
-        leader_position: tuple[float, float],
-    ) -> dict[str, MPCPlan]:
-        plans: dict[str, MPCPlan] = {}
-        predicted_neighbors: dict[str, list[TrajectoryPoint]] = {}
+    # ── Public API ──────────────────────────────────────────────────
 
-        for robot in robots:
-            target = (
-                leader_position[0] + robot.formation_offset[0],
-                leader_position[1] + robot.formation_offset[1],
-            )
-            plan = self._plan_robot(robot, target, predicted_neighbors, robots)
-            plans[robot.robot_id] = plan
-            predicted_neighbors[robot.robot_id] = plan.path
+    def update_pose(self, robot_id: str, x: float, y: float, theta: float) -> None:
+        self.poses[robot_id] = RobotPose(x, y, theta)
 
-        return plans
+    def plan(self, robot_id: str, goal: Tuple[float, float]) -> Tuple[float, float]:
+        """Return (linear_vel, angular_vel) towards *goal* while keeping formation."""
+        pose = self.poses.get(robot_id)
+        if pose is None:
+            return 0.0, 0.0
 
-    def _plan_robot(
-        self,
-        robot: RobotState,
-        target: tuple[float, float],
-        predicted_neighbors: dict[str, list[TrajectoryPoint]],
-        all_robots: list[RobotState],
-    ) -> MPCPlan:
-        current = Pose2D(robot.pose.x, robot.pose.y, robot.pose.heading)
-        current_velocity = robot.velocity
-        path: list[TrajectoryPoint] = []
-        total_cost = 0.0
-        first_velocity = current_velocity
+        # Goal attraction
+        dx = goal[0] - pose.x
+        dy = goal[1] - pose.y
+        dist = math.hypot(dx, dy)
+        angle_to_goal = math.atan2(dy, dx)
+        angle_err = self._wrap(angle_to_goal - pose.theta)
 
-        for step in range(self.horizon):
-            candidates = self._candidate_velocities(current, current_velocity, target)
-            best_velocity = current_velocity
-            best_point = TrajectoryPoint(current.x, current.y)
-            best_cost = float("inf")
+        lin = min(self.config.max_linear_vel, dist) * math.cos(angle_err)
+        ang = self.config.max_angular_vel * (2.0 / math.pi) * angle_err
 
-            for vx, vy in candidates:
-                next_x = current.x + (vx * self.dt)
-                next_y = current.y + (vy * self.dt)
-                candidate_cost = self._cost(
-                    next_x,
-                    next_y,
-                    vx,
-                    vy,
-                    current_velocity,
-                    target,
-                    step,
-                    robot.robot_id,
-                    predicted_neighbors,
-                    all_robots,
-                )
-                if candidate_cost < best_cost:
-                    best_cost = candidate_cost
-                    best_velocity = (vx, vy)
-                    best_point = TrajectoryPoint(next_x, next_y)
-
-            if step == 0:
-                first_velocity = best_velocity
-
-            path.append(best_point)
-            total_cost += best_cost
-            current = Pose2D(best_point.x, best_point.y, math.atan2(best_velocity[1], best_velocity[0] or 1e-6))
-            current_velocity = best_velocity
-
-        tracking_error = math.dist((path[0].x, path[0].y), target) if path else math.dist((current.x, current.y), target)
-        return MPCPlan(
-            path=path,
-            first_velocity=first_velocity,
-            cost=total_cost / max(self.horizon, 1),
-            tracking_error=tracking_error,
-        )
-
-    def _candidate_velocities(
-        self,
-        current: Pose2D,
-        current_velocity: tuple[float, float],
-        target: tuple[float, float],
-    ) -> list[tuple[float, float]]:
-        to_target_x = target[0] - current.x
-        to_target_y = target[1] - current.y
-        target_norm = math.hypot(to_target_x, to_target_y) or 1.0
-        desired = (
-            self.max_speed * to_target_x / target_norm,
-            self.max_speed * to_target_y / target_norm,
-        )
-
-        angles = (-0.75, -0.35, 0.0, 0.35, 0.75)
-        candidates = [(0.0, 0.0), current_velocity, desired]
-        base_angle = math.atan2(desired[1], desired[0] or 1e-6)
-
-        for offset in angles:
-            angle = base_angle + offset
-            speed = self.max_speed
-            candidates.append((speed * math.cos(angle), speed * math.sin(angle)))
-
-        return candidates
-
-    def _cost(
-        self,
-        next_x: float,
-        next_y: float,
-        vx: float,
-        vy: float,
-        previous_velocity: tuple[float, float],
-        target: tuple[float, float],
-        step: int,
-        robot_id: str,
-        predicted_neighbors: dict[str, list[TrajectoryPoint]],
-        all_robots: list[RobotState],
-    ) -> float:
-        tracking_cost = 4.0 * math.dist((next_x, next_y), target)
-        smoothness_cost = 0.8 * math.dist((vx, vy), previous_velocity)
-        speed_cost = 0.2 * math.hypot(vx, vy)
-        separation_cost = 0.0
-
-        for other in all_robots:
-            if other.robot_id == robot_id:
+        # Formation repulsion / attraction
+        for rid, other in self.poses.items():
+            if rid == robot_id:
                 continue
+            ox = other.x - pose.x
+            oy = other.y - pose.y
+            d = math.hypot(ox, oy) + 1e-6
+            desired = self.config.formation_radius
+            force = (d - desired) / d * self.config.formation_weight
+            lin += force * math.cos(math.atan2(oy, ox) - pose.theta) * 0.3
+            ang += force * math.sin(math.atan2(oy, ox) - pose.theta) * 0.3
 
-            predicted = predicted_neighbors.get(other.robot_id)
-            if predicted and step < len(predicted):
-                other_x, other_y = predicted[step].x, predicted[step].y
-            else:
-                other_x, other_y = other.pose.x, other.pose.y
+        lin = np.clip(lin, -self.config.max_linear_vel, self.config.max_linear_vel)
+        ang = np.clip(ang, -self.config.max_angular_vel, self.config.max_angular_vel)
+        return float(lin), float(ang)
 
-            distance = math.dist((next_x, next_y), (other_x, other_y))
-            if distance < self.safe_distance:
-                separation_cost += 10.0 * (self.safe_distance - distance + 1e-3)
+    # ── Helpers ─────────────────────────────────────────────────────
 
-        return tracking_cost + smoothness_cost + speed_cost + separation_cost
+    @staticmethod
+    def _wrap(angle: float) -> float:
+        while angle > math.pi:
+            angle -= 2 * math.pi
+        while angle < -math.pi:
+            angle += 2 * math.pi
+        return angle
+

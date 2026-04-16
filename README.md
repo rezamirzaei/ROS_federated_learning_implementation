@@ -58,8 +58,17 @@ cd ROS
 ### Quick Component Test (No Docker/ROS2)
 
 ```bash
-# Test model, FedAvg, data generation, inference
+# Test model, FedAvg, data generation, MPC, simulation engine
 python main.py test
+```
+
+### Standalone Dashboard (No Docker/ROS2)
+
+```bash
+# Launch the full web dashboard with in-process simulation
+python main.py
+# or
+python main.py run --robots 4 --port 5000
 ```
 
 ### Web Dashboard

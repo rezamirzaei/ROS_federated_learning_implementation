@@ -1,39 +1,53 @@
+"""
+In-process message bus that mirrors ROS2 topic semantics.
+
+Supports publish / subscribe with string-keyed topics and JSON payloads,
+exactly like the ``std_msgs/String`` protocol used by the ROS2 nodes.
+"""
+
 from __future__ import annotations
 
+import json
 import threading
 import time
-from collections import defaultdict, deque
-from typing import Callable
-
-from .models import BusEvent
-
-
-Subscriber = Callable[[BusEvent], None]
+from collections import defaultdict
+from typing import Any, Callable, Dict, List
 
 
 class MessageBus:
-    """Small in-process message bus that mirrors ROS topic semantics."""
+    """Thread-safe publish / subscribe message bus."""
 
-    def __init__(self, max_events: int = 250) -> None:
-        self._lock = threading.RLock()
-        self._subscribers: dict[str, list[Subscriber]] = defaultdict(list)
-        self._events: deque[BusEvent] = deque(maxlen=max_events)
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._subscribers: Dict[str, List[Callable[[dict], None]]] = defaultdict(list)
+        self._latest: Dict[str, dict] = {}
 
-    def subscribe(self, topic: str, handler: Subscriber) -> None:
+    # ── Core API ────────────────────────────────────────────────────
+
+    def publish(self, topic: str, data: dict) -> None:
+        """Publish *data* on *topic*.  All registered callbacks are invoked."""
         with self._lock:
-            self._subscribers[topic].append(handler)
+            self._latest[topic] = data
+            callbacks = list(self._subscribers[topic])
+        for cb in callbacks:
+            try:
+                cb(data)
+            except Exception:
+                pass  # Mirrors ROS best-effort semantics
 
-    def publish(self, topic: str, source: str, payload: dict[str, object]) -> BusEvent:
-        event = BusEvent(timestamp=time.time(), topic=topic, source=source, payload=dict(payload))
+    def subscribe(self, topic: str, callback: Callable[[dict], None]) -> None:
+        """Register *callback* to be called on every publish to *topic*."""
         with self._lock:
-            self._events.append(event)
-            subscribers = list(self._subscribers.get(topic, ())) + list(self._subscribers.get("*", ()))
+            self._subscribers[topic].append(callback)
 
-        for handler in subscribers:
-            handler(event)
-
-        return event
-
-    def recent_events(self, limit: int = 50) -> list[BusEvent]:
+    def latest(self, topic: str) -> dict | None:
+        """Return the most recent message on *topic*, or ``None``."""
         with self._lock:
-            return list(self._events)[-limit:]
+            return self._latest.get(topic)
+
+    # ── Convenience ─────────────────────────────────────────────────
+
+    def topics(self) -> List[str]:
+        with self._lock:
+            return list(self._latest.keys())
+

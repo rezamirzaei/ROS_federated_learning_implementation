@@ -36,6 +36,7 @@ setup(
             'web/static/js/*.js',
         ],
     },
+    py_modules=[],
     install_requires=[
         'setuptools',
         'torch',

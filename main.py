@@ -1,139 +1,127 @@
 #!/usr/bin/env python3
-"""
-ROS2 Federated Learning Multi-Robot System — Entry Point
+"""Repository entrypoint for the standalone ROS showcase web app."""
 
-This script provides a convenient way to launch the FL system or run
-quick tests without Docker. For full deployment, use:
+from __future__ import annotations
 
-    ./run.sh              # Docker-based deployment
-    ros2 launch fl_robots fl_system.launch.py   # ROS2 launch
-
-ROS2 Concepts Demonstrated in this project:
-- Topics (pub/sub for model weights, status, commands)
-- Services (RegisterRobot, TriggerAggregation, GetModelInfo, UpdateHyperparameters)
-- Actions (TrainRound with real-time feedback and cancellation)
-- Lifecycle Nodes (Aggregator: configure → activate → deactivate → shutdown)
-- Parameters (dynamic reconfiguration of learning rate, batch size, etc.)
-- QoS Profiles (reliable + transient local for critical data, best effort for metrics)
-- Callback Groups (reentrant + mutually exclusive for concurrent execution)
-- Multi-threaded Executors
-- Custom Interfaces (msg/srv/action definitions in fl_robots_interfaces)
-- Launch System (parameterized multi-node launch with staggered startup)
-- Web Dashboard (Flask + Socket.IO MVC architecture)
-"""
-
+import argparse
 import sys
-import os
-
-# Add source to path for direct execution
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src', 'fl_robots'))
 
 
-def print_banner():
-    """Print project banner."""
-    print("""
-╔══════════════════════════════════════════════════════════════════╗
-║        🤖 ROS2 Federated Learning Multi-Robot System 🤖        ║
-╠══════════════════════════════════════════════════════════════════╣
-║                                                                  ║
-║  Architecture:                                                   ║
-║    • Robot Agents  — Local training + Action Server              ║
-║    • Aggregator    — FedAvg (Lifecycle Node) + Services          ║
-║    • Coordinator   — State machine orchestration                 ║
-║    • Monitor       — Metrics collection & persistence            ║
-║    • Digital Twin  — Real-time visualization                     ║
-║    • Web Dashboard — MVC + WebSocket (http://localhost:5000)     ║
-║                                                                  ║
-║  ROS2 Features:                                                  ║
-║    Topics · Services · Actions · Lifecycle · Parameters          ║
-║    QoS · Callback Groups · Multi-threaded Executor               ║
-║    Custom msg/srv/action · Launch System                         ║
-║                                                                  ║
-╚══════════════════════════════════════════════════════════════════╝
-""")
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Launch the ROS-inspired federated learning and distributed MPC dashboard."
+    )
+    sub = parser.add_subparsers(dest="subcommand")
+
+    # Default / run mode
+    run_p = sub.add_parser("run", help="Start the web dashboard (default)")
+    run_p.add_argument("--host", default="127.0.0.1", help="HTTP host to bind")
+    run_p.add_argument("--port", default=5000, type=int, help="HTTP port to bind")
+    run_p.add_argument("--robots", default=4, type=int, help="Number of robot agents to simulate")
+    run_p.add_argument(
+        "--manual",
+        action="store_true",
+        help="Start with autopilot disabled so the simulation only advances on explicit step commands.",
+    )
+
+    # Quick component test (no Docker / ROS2 required)
+    sub.add_parser("test", help="Run quick component tests and exit")
+
+    # Also support top-level flags for backward compat
+    parser.add_argument("--host", default="127.0.0.1", help=argparse.SUPPRESS)
+    parser.add_argument("--port", default=5000, type=int, help=argparse.SUPPRESS)
+    parser.add_argument("--robots", default=4, type=int, help=argparse.SUPPRESS)
+    parser.add_argument("--manual", action="store_true", help=argparse.SUPPRESS)
+    return parser
 
 
-def run_quick_test():
-    """Run a quick standalone test of the FL components (no ROS2 required)."""
-    print("\n── Quick Component Test (no ROS2) ─────────────────────────")
-
-    from fl_robots.models import SimpleNavigationNet, federated_averaging, compute_gradient_divergence
-    from fl_robots.robot_agent import SyntheticDataGenerator
-    import torch
+def run_tests() -> None:
+    """Quick smoke-tests that validate models, FedAvg, and data generation."""
     import numpy as np
+    import torch
 
-    # 1. Model creation
+    from ros_web.models import (
+        SimpleNavigationNet,
+        federated_averaging,
+        compute_gradient_divergence,
+    )
+
+    print("=" * 55)
+    print("  QUICK COMPONENT TEST  (no Docker / ROS2 required)")
+    print("=" * 55)
+
+    # 1. Model creation + forward pass
     model = SimpleNavigationNet(input_dim=12, hidden_dim=64, output_dim=4)
-    print(f"✅ Model created: {model.count_parameters()} parameters")
+    x = torch.randn(8, 12)
+    out = model(x)
+    assert out.shape == (8, 4), f"Expected (8,4), got {out.shape}"
+    print(f"  ✅ Model forward pass OK — params: {model.count_parameters()}")
 
-    # 2. Synthetic data generation
-    gen = SyntheticDataGenerator("test_robot")
-    X, y = gen.generate_batch(64)
-    print(f"✅ Generated batch: X={X.shape}, y={y.shape}")
+    # 2. Weight serialisation round-trip
+    w = model.get_weights()
+    model2 = SimpleNavigationNet(input_dim=12, hidden_dim=64, output_dim=4)
+    model2.set_weights(w)
+    for k in w:
+        np.testing.assert_array_almost_equal(w[k], model2.get_weights()[k])
+    print("  ✅ Weight serialisation round-trip OK")
 
-    # 3. Forward pass
-    x_tensor = torch.tensor(X)
-    output = model(x_tensor)
-    print(f"✅ Forward pass: output={output.shape}")
+    # 3. FedAvg
+    models = [SimpleNavigationNet(12, 32, 4) for _ in range(3)]
+    wl = [m.get_weights() for m in models]
+    avg = federated_averaging(wl, [100, 150, 200])
+    global_m = SimpleNavigationNet(12, 32, 4)
+    global_m.set_weights(avg)
+    assert global_m(torch.randn(1, 12)).shape == (1, 4)
+    print("  ✅ Federated Averaging OK")
 
-    # 4. Training step
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
-    criterion = torch.nn.CrossEntropyLoss()
-    loss = criterion(output, torch.tensor(y))
-    loss.backward()
-    optimizer.step()
-    print(f"✅ Training step: loss={loss.item():.4f}")
+    # 4. Gradient divergence
+    divs = compute_gradient_divergence(wl, avg)
+    assert all(d >= 0 for d in divs)
+    print(f"  ✅ Gradient divergence OK — values: {[f'{d:.4f}' for d in divs]}")
 
-    # 5. Weight serialization
-    weights = model.get_weights()
-    print(f"✅ Weights extracted: {len(weights)} layers")
+    # 5. Simulation engine quick tick
+    from ros_web.simulation import SimulationEngine
+    sim = SimulationEngine(num_robots=2, auto_start=False)
+    sim._step()
+    assert sim.total_aggregations == 1
+    print("  ✅ SimulationEngine single step OK")
 
-    # 6. Federated averaging (simulate 3 robots)
-    models = [SimpleNavigationNet(12, 64, 4) for _ in range(3)]
-    weights_list = [m.get_weights() for m in models]
-    avg_weights = federated_averaging(weights_list, [100, 150, 200])
-    print(f"✅ Federated averaging: {len(avg_weights)} layers averaged")
+    # 6. MPC planner
+    from ros_web.mpc import DistributedMPCPlanner
+    planner = DistributedMPCPlanner()
+    planner.update_pose("r0", 1.0, 0.0, 0.0)
+    lin, ang = planner.plan("r0", (0.0, 0.0))
+    assert isinstance(lin, float)
+    print(f"  ✅ MPC planner OK — cmd=({lin:.2f}, {ang:.2f})")
 
-    # 7. Gradient divergence
-    divergences = compute_gradient_divergence(weights_list, avg_weights)
-    print(f"✅ Divergence: mean={np.mean(divergences):.4f}")
-
-    # 8. Inference
-    model.set_weights(avg_weights)
-    model.eval()
-    with torch.no_grad():
-        sample = torch.randn(1, 12)
-        probs = torch.softmax(model(sample), dim=-1)
-        action = torch.argmax(probs).item()
-        print(f"✅ Inference: action={action}, confidence={probs[0, action]:.3f}")
-
-    print("\n✅ All component tests passed!\n")
-
-
-def main():
-    print_banner()
-
-    if len(sys.argv) > 1:
-        cmd = sys.argv[1]
-        if cmd == 'test':
-            run_quick_test()
-        elif cmd == 'help':
-            print("Usage:")
-            print("  python main.py          Show project info")
-            print("  python main.py test     Run quick component test")
-            print("  python main.py help     Show this help")
-            print()
-            print("For full deployment:")
-            print("  ./run.sh                Docker-based deployment")
-            print("  ros2 launch fl_robots fl_system.launch.py")
-        else:
-            print(f"Unknown command: {cmd}")
-            print("Run 'python main.py help' for usage.")
-    else:
-        print("Run 'python main.py test' for a quick component test.")
-        print("Run './run.sh' to deploy with Docker.")
-        print("Run 'ros2 launch fl_robots fl_system.launch.py' for ROS2 launch.")
+    print("-" * 55)
+    print("  All tests passed ✅")
+    print("=" * 55)
 
 
-if __name__ == '__main__':
+def main() -> None:
+    parser = build_parser()
+    args = parser.parse_args()
+
+    if args.subcommand == "test":
+        run_tests()
+        return
+
+    # Default: run the web dashboard
+    from ros_web.simulation import SimulationEngine
+    from ros_web.web import create_app
+
+    simulation = SimulationEngine(num_robots=args.robots, auto_start=True)
+    if args.manual:
+        simulation.issue_command("toggle_autopilot")
+
+    app = create_app(simulation)
+    try:
+        print(f"\n🤖 Dashboard: http://{args.host}:{args.port}\n")
+        app.run(host=args.host, port=args.port, debug=False)
+    finally:
+        simulation.shutdown()
+
+
+if __name__ == "__main__":
     main()

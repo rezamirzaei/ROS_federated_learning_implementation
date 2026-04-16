@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ROS Multi-Agent Showcase</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/standalone.css') }}">
+</head>
+<body>
+    <header class="hero">
+        <div>
+            <p class="eyebrow">ROS-inspired MVC control room</p>
+            <h1>Distributed FL + MPC Multi-Agent Dashboard</h1>
+            <p class="lede">
+                Interactive agents, topic-level message passing, federated rounds, and a distributed MPC formation controller in one browser experience.
+            </p>
+        </div>
+        <div class="hero-stats">
+            <div>
+                <span class="label">Controller</span>
+                <strong id="controller-state">IDLE</strong>
+            </div>
+            <div>
+                <span class="label">Round</span>
+                <strong id="round-id">0</strong>
+            </div>
+            <div>
+                <span class="label">Autopilot</span>
+                <strong id="autopilot-state">ON</strong>
+            </div>
+        </div>
+    </header>
+
+    <main class="layout">
+        <section class="panel controls-panel">
+            <div class="panel-header">
+                <h2>Mission Control</h2>
+                <span class="hint">Live commands through the message bus</span>
+            </div>
+            <div class="controls">
+                <button data-command="start_training">Start training</button>
+                <button data-command="stop_training">Stop training</button>
+                <button data-command="toggle_autopilot">Toggle autopilot</button>
+                <button data-command="step">Single step</button>
+                <button data-command="disturbance">Inject disturbance</button>
+                <button data-command="reset">Reset world</button>
+                <a class="download-link" href="/api/results">Download results</a>
+            </div>
+            <div class="system-grid">
+                <article>
+                    <span class="label">Average accuracy</span>
+                    <strong id="avg-accuracy">0%</strong>
+                </article>
+                <article>
+                    <span class="label">Average loss</span>
+                    <strong id="avg-loss">0.0</strong>
+                </article>
+                <article>
+                    <span class="label">Tracking error</span>
+                    <strong id="tracking-error">0.0</strong>
+                </article>
+                <article>
+                    <span class="label">Last divergence</span>
+                    <strong id="mean-divergence">0.0</strong>
+                </article>
+            </div>
+        </section>
+
+        <section class="panel twin-panel">
+            <div class="panel-header">
+                <h2>Digital Twin</h2>
+                <span class="hint">Formation, predicted horizons, and leader path</span>
+            </div>
+            <svg id="digital-twin" viewBox="-4 -3 8 6" aria-label="Digital twin scene"></svg>
+        </section>
+
+        <section class="panel">
+            <div class="panel-header">
+                <h2>Robot Agents</h2>
+                <span class="hint">Local telemetry and FL progress</span>
+            </div>
+            <div id="robots-grid" class="robots-grid"></div>
+        </section>
+
+        <section class="panel">
+            <div class="panel-header">
+                <h2>Message Passing</h2>
+                <span class="hint">Recent topic activity</span>
+            </div>
+            <div class="message-list" id="message-list"></div>
+        </section>
+    </main>
+
+    <script src="{{ url_for('static', filename='js/standalone.js') }}"></script>
+</body>
+</html>
+

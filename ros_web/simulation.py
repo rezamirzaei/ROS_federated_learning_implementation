@@ -1,284 +1,325 @@
+"""
+Standalone simulation engine that replicates the full ROS2 federated-learning
+pipeline in a single process.
+
+The engine spawns lightweight "virtual" robot agents, an aggregator, and a
+coordinator — all communicating through :class:`ros_web.message_bus.MessageBus`
+instead of DDS.
+"""
+
 from __future__ import annotations
 
+import json
 import math
-import random
 import threading
 import time
-from collections import deque
-from typing import Any
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional
 
-from .message_bus import MessageBus
-from .models import AggregationRecord, Pose2D, RobotState
-from .mpc import DistributedMPCPlanner
+import numpy as np
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from torch.utils.data import DataLoader, TensorDataset
 
+from ros_web.message_bus import MessageBus
+from ros_web.models import (
+    SimpleNavigationNet,
+    federated_averaging,
+    compute_gradient_divergence,
+)
+from ros_web.mpc import DistributedMPCPlanner, MPCConfig
+
+
+# ── Synthetic data (same logic as robot_agent.py) ───────────────────
+
+class _SyntheticDataGenerator:
+    def __init__(self, robot_id: str):
+        self.rng = np.random.RandomState(hash(robot_id) % 10000)
+        self.obstacle_bias = self.rng.uniform(-0.3, 0.3, size=8)
+        self.goal_bias = self.rng.uniform(-0.2, 0.2, size=4)
+
+    def generate_batch(self, n: int = 256):
+        X, y = [], []
+        for _ in range(n):
+            lidar = np.clip(self.rng.uniform(0.1, 1.0, 8) + self.obstacle_bias * 0.1, 0, 1)
+            goal = np.clip(
+                np.array([self.rng.uniform(0, 1), self.rng.uniform(-1, 1),
+                          self.rng.uniform(0, 1), self.rng.uniform(-1, 1)])
+                + self.goal_bias * 0.1, -1, 1)
+            X.append(np.concatenate([lidar, goal]))
+            y.append(self._label(lidar, goal))
+        return np.array(X, dtype=np.float32), np.array(y, dtype=np.int64)
+
+    def _label(self, lidar, goal):
+        if self.rng.random() < 0.1:
+            return self.rng.randint(0, 4)
+        front = lidar[0] > 0.4 and lidar[1] > 0.3 and lidar[7] > 0.3
+        left = lidar[2] > 0.4 and lidar[3] > 0.4
+        right = lidar[5] > 0.4 and lidar[6] > 0.4
+        angle = goal[1]
+        if not front:
+            return 1 if left and (not right or angle > 0) else (2 if right else 3)
+        return 0 if abs(angle) < 0.2 else (1 if angle > 0 else 2)
+
+
+# ── Virtual Robot Agent ─────────────────────────────────────────────
+
+@dataclass
+class _VirtualRobot:
+    robot_id: str
+    model: SimpleNavigationNet
+    optimizer: Any = None
+    data_gen: Any = None
+    loss_history: list = field(default_factory=list)
+    acc_history: list = field(default_factory=list)
+    is_training: bool = False
+    training_round: int = 0
+    # MPC state
+    x: float = 0.0
+    y: float = 0.0
+    theta: float = 0.0
+
+
+# ── Simulation Engine ───────────────────────────────────────────────
 
 class SimulationEngine:
-    """ROS-inspired multi-agent system with federated rounds and distributed MPC."""
+    """
+    Runs the full FL pipeline in-process.
 
-    def __init__(self, num_robots: int = 4, tick_interval: float = 0.45, auto_start: bool = True) -> None:
-        self.num_robots = num_robots
-        self.tick_interval = tick_interval
-        self._lock = threading.RLock()
-        self._stop_event = threading.Event()
-        self._thread: threading.Thread | None = None
-        self._rng = random.Random(42)
-        self.bus = MessageBus(max_events=300)
-        self.planner = DistributedMPCPlanner()
-        self.robots: dict[str, RobotState] = {}
-        self.aggregation_history: deque[AggregationRecord] = deque(maxlen=60)
-        self.command_history: deque[str] = deque(maxlen=30)
-        self.training_active = False
-        self.autopilot = True
-        self.controller_state = "IDLE"
+    Public surface consumed by :func:`ros_web.web.create_app`:
+    - ``bus``            – the message bus
+    - ``status``         – dict snapshot for ``/api/status``
+    - ``issue_command``  – inject a command string
+    - ``shutdown``       – stop background threads
+    """
+
+    def __init__(self, num_robots: int = 4, auto_start: bool = True) -> None:
+        self.bus = MessageBus()
+        self.mpc = DistributedMPCPlanner(MPCConfig(formation_radius=3.0))
+
+        # Global model
+        self.global_model = SimpleNavigationNet(input_dim=12, hidden_dim=64, output_dim=4)
+        self.global_weights = self.global_model.get_weights()
         self.current_round = 0
-        self.tick_count = 0
-        self.leader_phase = 0.0
-        self.leader_position = (0.0, 0.0)
-        self.last_aggregation: AggregationRecord | None = None
+        self.total_aggregations = 0
+        self.mean_divergence = 0.0
+        self.coordinator_state = "IDLE"
+        self.start_time = time.time()
 
-        self.bus.subscribe("/system/command", self._handle_command_event)
-        self._reset_locked()
+        # Robots
+        self.robots: Dict[str, _VirtualRobot] = {}
+        for i in range(num_robots):
+            rid = f"robot_{i}"
+            model = SimpleNavigationNet(input_dim=12, hidden_dim=64, output_dim=4)
+            model.set_weights(self.global_weights)
+            angle = 2 * math.pi * i / num_robots
+            self.robots[rid] = _VirtualRobot(
+                robot_id=rid,
+                model=model,
+                optimizer=optim.Adam(model.parameters(), lr=0.001),
+                data_gen=_SyntheticDataGenerator(rid),
+                x=3.0 * math.cos(angle),
+                y=3.0 * math.sin(angle),
+                theta=angle + math.pi,
+            )
+            self.mpc.update_pose(rid, self.robots[rid].x, self.robots[rid].y, self.robots[rid].theta)
+
+        # History for charts
+        self.loss_history: List[dict] = []
+        self.acc_history: List[dict] = []
+        self.events: list = []
+
+        # Threading
+        self._lock = threading.Lock()
+        self._running = False
+        self._autopilot = True
+        self._step_event = threading.Event()
 
         if auto_start:
             self.start()
 
-    def start(self) -> None:
-        if self._thread and self._thread.is_alive():
-            return
+    # ── Control ─────────────────────────────────────────────────────
 
-        self._stop_event.clear()
-        self._thread = threading.Thread(target=self._run_loop, daemon=True)
+    def start(self) -> None:
+        self._running = True
+        self._thread = threading.Thread(target=self._loop, daemon=True)
         self._thread.start()
 
     def shutdown(self) -> None:
-        self._stop_event.set()
-        if self._thread and self._thread.is_alive():
-            self._thread.join(timeout=2.0)
+        self._running = False
+        self._step_event.set()
 
-    def issue_command(self, command: str) -> None:
-        self.bus.publish("/system/command", "web-ui", {"command": command})
+    def issue_command(self, cmd: str) -> dict:
+        """Process a dashboard command string."""
+        if cmd == "start_training":
+            self._step_event.set()
+            return {"success": True, "message": "Training step triggered"}
+        if cmd == "stop_training":
+            self._autopilot = False
+            return {"success": True, "message": "Autopilot disabled"}
+        if cmd == "toggle_autopilot":
+            self._autopilot = not self._autopilot
+            return {"success": True, "message": f"Autopilot {'ON' if self._autopilot else 'OFF'}"}
+        if cmd == "publish_weights":
+            self._aggregate()
+            return {"success": True, "message": "Forced aggregation"}
+        return {"success": False, "message": f"Unknown command: {cmd}"}
 
-    def step_once(self) -> None:
+    # ── Status snapshot ─────────────────────────────────────────────
+
+    @property
+    def status(self) -> dict:
         with self._lock:
-            self._tick_locked()
+            robots_data = {}
+            total_loss = total_acc = count = best_acc = 0
+            for rid, r in self.robots.items():
+                robots_data[rid] = {
+                    "is_training": r.is_training,
+                    "loss": r.loss_history[-1] if r.loss_history else None,
+                    "accuracy": r.acc_history[-1] if r.acc_history else None,
+                    "rounds": r.training_round,
+                }
+                if r.loss_history:
+                    total_loss += r.loss_history[-1]; count += 1
+                if r.acc_history:
+                    total_acc += r.acc_history[-1]
+                    best_acc = max(best_acc, r.acc_history[-1])
 
-    def snapshot(self) -> dict[str, Any]:
-        with self._lock:
-            robots = [robot.as_dict() for robot in self.robots.values()]
-            avg_loss = sum(robot.training_loss for robot in self.robots.values()) / max(len(self.robots), 1)
-            avg_accuracy = sum(robot.accuracy for robot in self.robots.values()) / max(len(self.robots), 1)
-            best_accuracy = max((robot.accuracy for robot in self.robots.values()), default=0.0)
-            mean_tracking_error = sum(
-                robot.last_tracking_error for robot in self.robots.values()
-            ) / max(len(self.robots), 1)
-
-            last_aggregation = self.last_aggregation.as_dict() if self.last_aggregation else None
             return {
-                "system": {
-                    "controller_state": self.controller_state,
-                    "training_active": self.training_active,
-                    "autopilot": self.autopilot,
-                    "current_round": self.current_round,
-                    "tick_count": self.tick_count,
-                    "leader_position": {"x": self.leader_position[0], "y": self.leader_position[1]},
-                    "robot_count": len(self.robots),
-                },
-                "metrics": {
-                    "avg_loss": avg_loss,
-                    "avg_accuracy": avg_accuracy,
-                    "best_accuracy": best_accuracy,
-                    "mean_tracking_error": mean_tracking_error,
-                    "last_aggregation": last_aggregation,
-                    "aggregation_history": [record.as_dict() for record in self.aggregation_history],
-                },
-                "robots": robots,
-                "messages": [event.as_dict() for event in self.bus.recent_events(limit=80)],
-                "commands": list(self.command_history),
+                "coordinator_state": self.coordinator_state,
+                "current_round": self.current_round,
+                "total_aggregations": self.total_aggregations,
+                "active_robots": len(self.robots),
+                "mean_divergence": self.mean_divergence,
+                "avg_loss": total_loss / count if count else None,
+                "avg_accuracy": total_acc / count if count else None,
+                "best_accuracy": best_acc if best_acc else None,
+                "training_time": time.time() - self.start_time,
+                "robots": robots_data,
+                "events": self.events[-200:],
+                "loss_history": self.loss_history[-50:],
+                "acc_history": self.acc_history[-50:],
+                "autopilot": self._autopilot,
             }
 
-    def export_results(self) -> dict[str, Any]:
-        snapshot = self.snapshot()
-        snapshot["exported_at"] = time.time()
-        return snapshot
+    # ── Background loop ─────────────────────────────────────────────
 
-    def _run_loop(self) -> None:
-        while not self._stop_event.is_set():
-            with self._lock:
-                if self.autopilot:
-                    self._tick_locked()
-            self._stop_event.wait(self.tick_interval)
+    def _loop(self) -> None:
+        self._add_event("Simulation started")
+        self.coordinator_state = "WAITING_FOR_ROBOTS"
+        time.sleep(1)
+        self.coordinator_state = "TRAINING_ROUND"
 
-    def _handle_command_event(self, event) -> None:
-        command = str(event.payload["command"])
-        with self._lock:
-            self.command_history.appendleft(command)
-
-            if command == "start_training":
-                self.training_active = True
-                self.controller_state = "RUNNING"
-            elif command == "stop_training":
-                self.training_active = False
-                self.controller_state = "PAUSED"
-            elif command == "toggle_autopilot":
-                self.autopilot = not self.autopilot
-                self.controller_state = "RUNNING" if self.autopilot else "MANUAL"
-            elif command == "step":
-                self._tick_locked()
-            elif command == "disturbance":
-                self._inject_disturbance_locked()
-            elif command == "reset":
-                self._reset_locked()
+        while self._running:
+            if self._autopilot:
+                self._step()
+                time.sleep(2)          # pace the simulation
             else:
-                raise ValueError(f"Unsupported command: {command}")
+                self._step_event.wait(timeout=5)
+                if self._step_event.is_set():
+                    self._step_event.clear()
+                    self._step()
 
-            self.bus.publish(
-                "/fl/training_command",
-                "coordinator",
-                {"command": command, "round": self.current_round, "controller_state": self.controller_state},
-            )
+    def _step(self) -> None:
+        """Execute one FL round: local training → aggregation → broadcast."""
+        self.current_round += 1
+        self.coordinator_state = "TRAINING_ROUND"
+        self._add_event(f"Round {self.current_round} – local training")
 
-    def _reset_locked(self) -> None:
-        self.robots.clear()
-        self.aggregation_history.clear()
-        self.command_history.clear()
-        self.training_active = False
-        self.autopilot = True
-        self.controller_state = "IDLE"
-        self.current_round = 0
-        self.tick_count = 0
-        self.leader_phase = 0.0
-        self.leader_position = (0.0, 0.0)
-        self.last_aggregation = None
+        # Local training
+        for rid, robot in self.robots.items():
+            self._train_local(robot)
 
-        formation_radius = 1.4
-        for index in range(self.num_robots):
-            angle = (2.0 * math.pi * index) / self.num_robots
-            robot_id = f"robot_{index + 1}"
-            offset = (formation_radius * math.cos(angle), formation_radius * math.sin(angle))
-            pose = Pose2D(offset[0], offset[1], angle)
-            self.robots[robot_id] = RobotState(
-                robot_id=robot_id,
-                pose=pose,
-                velocity=(0.0, 0.0),
-                formation_offset=offset,
-                goal=offset,
-                training_loss=1.15 + (index * 0.08),
-                accuracy=45.0 + (index * 3.5),
-            )
-            self.bus.publish("/fl/robot_status", robot_id, {"status": "registered"})
+        # Aggregation
+        self._aggregate()
 
-    def _tick_locked(self) -> None:
-        self.tick_count += 1
-        self.leader_phase += 0.18
-        self.leader_position = (
-            1.4 * math.cos(self.leader_phase * 0.55),
-            0.9 * math.sin(self.leader_phase * 0.35),
-        )
-        plans = self.planner.solve(list(self.robots.values()), self.leader_position)
+        # MPC step (move robots slightly)
+        for rid, robot in self.robots.items():
+            goal = (0.0, 0.0)  # converge to center
+            lin, ang = self.mpc.plan(rid, goal)
+            robot.x += lin * 0.1 * math.cos(robot.theta)
+            robot.y += lin * 0.1 * math.sin(robot.theta)
+            robot.theta += ang * 0.1
+            self.mpc.update_pose(rid, robot.x, robot.y, robot.theta)
 
-        min_separation = float("inf")
-        formation_error = 0.0
-        robot_items = list(self.robots.items())
-        for robot_id, robot in robot_items:
-            plan = plans[robot_id]
-            next_point = plan.path[0]
-            robot.velocity = plan.first_velocity
-            robot.pose = Pose2D(next_point.x, next_point.y, math.atan2(plan.first_velocity[1], plan.first_velocity[0] or 1e-6))
-            robot.goal = (
-                self.leader_position[0] + robot.formation_offset[0],
-                self.leader_position[1] + robot.formation_offset[1],
-            )
-            robot.predicted_path = plan.path
-            robot.last_plan_cost = plan.cost
-            robot.last_tracking_error = plan.tracking_error
-            robot.is_training = self.training_active
-            formation_error += plan.tracking_error
-            robot.messages_sent += 2
+        self.coordinator_state = "AGGREGATING"
+        self.bus.publish("/fl/coordinator_status", {
+            "state": self.coordinator_state,
+            "current_round": self.current_round,
+        })
 
-            self.bus.publish(
-                f"/fl/{robot_id}/mpc_plan",
-                robot_id,
-                {
-                    "goal": {"x": robot.goal[0], "y": robot.goal[1]},
-                    "tracking_error": plan.tracking_error,
-                    "plan_cost": plan.cost,
-                },
-            )
-            self.bus.publish(
-                f"/fl/{robot_id}/telemetry",
-                robot_id,
-                {
-                    "pose": robot.pose.as_dict(),
-                    "velocity": {"x": robot.velocity[0], "y": robot.velocity[1]},
-                    "round": self.current_round,
-                },
-            )
+    def _train_local(self, robot: _VirtualRobot) -> None:
+        robot.is_training = True
+        robot.training_round = self.current_round
+        criterion = nn.CrossEntropyLoss()
 
-        for index, (_, robot) in enumerate(robot_items):
-            for _, other in robot_items[index + 1 :]:
-                min_separation = min(
-                    min_separation,
-                    math.dist((robot.pose.x, robot.pose.y), (other.pose.x, other.pose.y)),
-                )
+        X, y = robot.data_gen.generate_batch(256)
+        ds = TensorDataset(torch.tensor(X), torch.tensor(y))
+        dl = DataLoader(ds, batch_size=32, shuffle=True)
 
-        if self.training_active:
-            self._update_training_locked(formation_error / max(len(self.robots), 1), min_separation)
+        robot.model.train()
+        total_loss = correct = total = 0
+        for epoch in range(5):
+            for bx, by in dl:
+                robot.optimizer.zero_grad()
+                out = robot.model(bx)
+                loss = criterion(out, by)
+                loss.backward()
+                robot.optimizer.step()
+                total_loss += loss.item()
+                _, pred = torch.max(out, 1)
+                total += by.size(0)
+                correct += (pred == by).sum().item()
 
-        self.bus.publish(
-            "/fl/coordinator_status",
-            "coordinator",
-            {
-                "state": self.controller_state,
-                "current_round": self.current_round,
-                "training_active": self.training_active,
-                "autopilot": self.autopilot,
-            },
-        )
+        avg_loss = total_loss / (5 * len(dl))
+        accuracy = 100.0 * correct / total
+        robot.loss_history.append(avg_loss)
+        robot.acc_history.append(accuracy)
+        robot.is_training = False
 
-    def _update_training_locked(self, formation_error: float, min_separation: float) -> None:
-        improvement_factor = max(0.015, 0.05 - (formation_error * 0.01))
-        safety_bonus = 0.02 if min_separation > 0.75 else -0.03
+        self.bus.publish(f"/fl/{robot.robot_id}/model_weights", {
+            "type": "local_weights",
+            "robot_id": robot.robot_id,
+            "round": self.current_round,
+            "loss": avg_loss,
+            "accuracy": accuracy,
+        })
 
-        for index, robot in enumerate(self.robots.values(), start=1):
-            robot.training_loss = max(0.08, robot.training_loss - improvement_factor + (index * 0.002))
-            robot.accuracy = min(98.5, robot.accuracy + (1.4 - formation_error * 0.1) + safety_bonus)
+    def _aggregate(self) -> None:
+        weights_list = [r.model.get_weights() for r in self.robots.values()]
+        sample_counts = [256] * len(weights_list)
 
-            self.bus.publish(
-                f"/fl/{robot.robot_id}/model_weights",
-                robot.robot_id,
-                {
-                    "round": self.current_round + 1,
-                    "samples_trained": 256,
-                    "loss": robot.training_loss,
-                    "accuracy": robot.accuracy,
-                },
-            )
+        divergences = compute_gradient_divergence(weights_list, self.global_weights)
+        self.mean_divergence = float(np.mean(divergences))
 
-        if self.tick_count % 5 == 0:
-            self.current_round += 1
-            divergence = (formation_error * 0.35) + max(0.0, 0.8 - min_separation)
-            record = AggregationRecord(
-                round_id=self.current_round,
-                participants=len(self.robots),
-                mean_loss=sum(robot.training_loss for robot in self.robots.values()) / len(self.robots),
-                mean_accuracy=sum(robot.accuracy for robot in self.robots.values()) / len(self.robots),
-                mean_divergence=divergence,
-                formation_error=formation_error,
-            )
-            self.last_aggregation = record
-            self.aggregation_history.append(record)
+        aggregated = federated_averaging(weights_list, sample_counts)
+        self.global_weights = aggregated
+        self.global_model.set_weights(aggregated)
 
-            for robot in self.robots.values():
-                robot.training_round = self.current_round
+        for r in self.robots.values():
+            r.model.set_weights(aggregated)
 
-            self.bus.publish(
-                "/fl/aggregation_metrics",
-                "aggregator",
-                record.as_dict(),
-            )
+        self.total_aggregations += 1
+        self._add_event(f"Aggregation round {self.total_aggregations} – divergence {self.mean_divergence:.4f}")
 
-    def _inject_disturbance_locked(self) -> None:
-        for robot in self.robots.values():
-            robot.pose.x += self._rng.uniform(-0.15, 0.15)
-            robot.pose.y += self._rng.uniform(-0.15, 0.15)
-        self.controller_state = "RECOVERING"
+        # Record chart history
+        snap_loss, snap_acc = {}, {}
+        for rid, r in self.robots.items():
+            snap_loss[rid] = {"loss": r.loss_history[-1] if r.loss_history else None}
+            snap_acc[rid] = {"accuracy": r.acc_history[-1] if r.acc_history else None}
+        self.loss_history.append({"round": self.total_aggregations, "robots": snap_loss})
+        self.acc_history.append({"round": self.total_aggregations, "robots": snap_acc})
+
+        self.bus.publish("/fl/aggregation_metrics", {
+            "round": self.total_aggregations,
+            "num_participants": len(weights_list),
+            "mean_divergence": self.mean_divergence,
+        })
+
+    # ── Helpers ─────────────────────────────────────────────────────
+
+    def _add_event(self, message: str) -> None:
+        with self._lock:
+            self.events.append({"time": time.strftime("%H:%M:%S"), "message": message})
+
