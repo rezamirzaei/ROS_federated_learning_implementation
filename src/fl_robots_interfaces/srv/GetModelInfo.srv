@@ -1,0 +1,14 @@
+# GetModelInfo.srv - Query current model information from a robot
+# Request
+string robot_id                     # Which robot to query (empty = global model)
+---
+# Response
+bool success
+string robot_id
+int32 parameter_count
+int32 current_round
+float32 last_loss
+float32 last_accuracy
+string model_architecture           # JSON model description
+string training_history             # JSON training history
+

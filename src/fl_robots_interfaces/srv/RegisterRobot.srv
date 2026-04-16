@@ -1,0 +1,12 @@
+# RegisterRobot.srv - Register a robot agent with the aggregator
+# Request
+string robot_id
+int32 model_parameter_count
+string model_architecture          # JSON description of model
+---
+# Response
+bool success
+string message
+int32 assigned_index               # Index in the federation
+int32 current_round                # Current global round number
+

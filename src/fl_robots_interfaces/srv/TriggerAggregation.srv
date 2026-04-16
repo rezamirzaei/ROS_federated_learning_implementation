@@ -1,0 +1,12 @@
+# TriggerAggregation.srv - Manually trigger federated averaging
+# Request
+bool force                          # Force aggregation even if threshold not met
+int32 min_participants              # Override minimum participants (0 = use default)
+---
+# Response
+bool success
+string message
+int32 round_number                  # The round that was aggregated
+int32 num_participants
+float32 mean_divergence
+

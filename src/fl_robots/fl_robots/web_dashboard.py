@@ -1,15 +1,20 @@
 #!/usr/bin/env python3
 """
-Web Dashboard for Federated Learning System
+Web Dashboard Node — MVC Architecture with WebSocket Real-time Updates
 
-This node provides a web-based user interface for:
-- Real-time monitoring of training progress
-- System control (start/stop training)
-- Viewing robot metrics and status
-- Downloading results
-- Interactive parameter adjustment
+This node provides a comprehensive web-based UI for the federated learning system:
 
-Uses Flask as the web framework with ROS2 integration.
+Architecture (MVC):
+- Model: ROS2 subscriber callbacks collect state from all nodes
+- View: Jinja2 HTML templates + Chart.js + Canvas topology
+- Controller: Flask routes + Socket.IO for bidirectional real-time communication
+
+ROS2 Concepts Demonstrated:
+- Subscribers (robot status, aggregation metrics, coordinator status)
+- Publishers (training commands)
+- Service Clients (TriggerAggregation, UpdateHyperparameters, GetModelInfo)
+- QoS Profiles (reliable + transient local)
+- Multi-threaded integration with Flask/Socket.IO
 """
 
 import rclpy
@@ -27,520 +32,44 @@ import os
 from typing import Dict, List, Any, Optional
 from dataclasses import dataclass, asdict
 from collections import deque
+from pathlib import Path
 
 try:
-    from flask import Flask, render_template_string, jsonify, request, send_file
+    from flask import Flask, render_template, jsonify, request, send_file, send_from_directory
     from flask_cors import CORS
     FLASK_AVAILABLE = True
 except ImportError:
     FLASK_AVAILABLE = False
     print("Flask not available. Install with: pip install flask flask-cors")
 
+try:
+    from flask_socketio import SocketIO, emit
+    SOCKETIO_AVAILABLE = True
+except ImportError:
+    SOCKETIO_AVAILABLE = False
 
-# HTML Template for the dashboard
-DASHBOARD_HTML = """
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FL Robot Dashboard</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-            min-height: 100vh;
-            color: #eee;
-        }
-        
-        .header {
-            background: rgba(0,0,0,0.3);
-            padding: 20px;
-            text-align: center;
-            border-bottom: 2px solid #0f3460;
-        }
-        
-        .header h1 {
-            color: #e94560;
-            font-size: 2em;
-            margin-bottom: 5px;
-        }
-        
-        .header .subtitle {
-            color: #888;
-            font-size: 0.9em;
-        }
-        
-        .container {
-            max-width: 1400px;
-            margin: 0 auto;
-            padding: 20px;
-        }
-        
-        .grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 20px;
-            margin-bottom: 20px;
-        }
-        
-        .card {
-            background: rgba(255,255,255,0.05);
-            border-radius: 15px;
-            padding: 20px;
-            border: 1px solid rgba(255,255,255,0.1);
-            backdrop-filter: blur(10px);
-        }
-        
-        .card h2 {
-            color: #e94560;
-            font-size: 1.2em;
-            margin-bottom: 15px;
-            padding-bottom: 10px;
-            border-bottom: 1px solid rgba(255,255,255,0.1);
-        }
-        
-        .stat-box {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 10px 0;
-            border-bottom: 1px solid rgba(255,255,255,0.05);
-        }
-        
-        .stat-box:last-child {
-            border-bottom: none;
-        }
-        
-        .stat-label {
-            color: #888;
-        }
-        
-        .stat-value {
-            font-size: 1.3em;
-            font-weight: bold;
-            color: #4ecca3;
-        }
-        
-        .stat-value.warning {
-            color: #f39c12;
-        }
-        
-        .stat-value.danger {
-            color: #e74c3c;
-        }
-        
-        .robot-card {
-            background: rgba(255,255,255,0.03);
-            border-radius: 10px;
-            padding: 15px;
-            margin-bottom: 10px;
-        }
-        
-        .robot-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 10px;
-        }
-        
-        .robot-name {
-            font-weight: bold;
-            color: #4ecca3;
-        }
-        
-        .robot-status {
-            padding: 3px 10px;
-            border-radius: 15px;
-            font-size: 0.8em;
-        }
-        
-        .status-training {
-            background: #e74c3c;
-        }
-        
-        .status-idle {
-            background: #3498db;
-        }
-        
-        .status-complete {
-            background: #27ae60;
-        }
-        
-        .progress-bar {
-            height: 8px;
-            background: rgba(255,255,255,0.1);
-            border-radius: 4px;
-            overflow: hidden;
-            margin-top: 10px;
-        }
-        
-        .progress-fill {
-            height: 100%;
-            background: linear-gradient(90deg, #e94560, #4ecca3);
-            transition: width 0.3s ease;
-        }
-        
-        .controls {
-            display: flex;
-            gap: 10px;
-            flex-wrap: wrap;
-        }
-        
-        .btn {
-            padding: 12px 25px;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-            font-size: 1em;
-            font-weight: bold;
-            transition: all 0.3s ease;
-        }
-        
-        .btn-primary {
-            background: #e94560;
-            color: white;
-        }
-        
-        .btn-primary:hover {
-            background: #ff6b6b;
-            transform: translateY(-2px);
-        }
-        
-        .btn-secondary {
-            background: #0f3460;
-            color: white;
-        }
-        
-        .btn-secondary:hover {
-            background: #1a4a7a;
-        }
-        
-        .btn-danger {
-            background: #c0392b;
-            color: white;
-        }
-        
-        .btn:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
-        
-        .chart-container {
-            height: 200px;
-            position: relative;
-        }
-        
-        .log-container {
-            max-height: 300px;
-            overflow-y: auto;
-            background: rgba(0,0,0,0.3);
-            border-radius: 8px;
-            padding: 10px;
-            font-family: monospace;
-            font-size: 0.85em;
-        }
-        
-        .log-entry {
-            padding: 3px 0;
-            border-bottom: 1px solid rgba(255,255,255,0.05);
-        }
-        
-        .log-time {
-            color: #666;
-            margin-right: 10px;
-        }
-        
-        .digital-twin-container {
-            text-align: center;
-        }
-        
-        .digital-twin-container img {
-            max-width: 100%;
-            border-radius: 10px;
-            border: 2px solid rgba(255,255,255,0.1);
-        }
-        
-        .refresh-notice {
-            text-align: center;
-            color: #666;
-            font-size: 0.8em;
-            margin-top: 10px;
-        }
-        
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
-        }
-        
-        .live-indicator {
-            display: inline-block;
-            width: 10px;
-            height: 10px;
-            background: #27ae60;
-            border-radius: 50%;
-            margin-right: 8px;
-            animation: pulse 1.5s infinite;
-        }
-    </style>
-</head>
-<body>
-    <div class="header">
-        <h1>🤖 Federated Learning Dashboard</h1>
-        <p class="subtitle"><span class="live-indicator"></span>Real-time monitoring and control</p>
-    </div>
-    
-    <div class="container">
-        <div class="grid">
-            <!-- System Status -->
-            <div class="card">
-                <h2>📊 System Status</h2>
-                <div class="stat-box">
-                    <span class="stat-label">Coordinator State</span>
-                    <span class="stat-value" id="coordinator-state">-</span>
-                </div>
-                <div class="stat-box">
-                    <span class="stat-label">Current Round</span>
-                    <span class="stat-value" id="current-round">0</span>
-                </div>
-                <div class="stat-box">
-                    <span class="stat-label">Total Aggregations</span>
-                    <span class="stat-value" id="total-aggregations">0</span>
-                </div>
-                <div class="stat-box">
-                    <span class="stat-label">Active Robots</span>
-                    <span class="stat-value" id="active-robots">0</span>
-                </div>
-                <div class="stat-box">
-                    <span class="stat-label">Mean Divergence</span>
-                    <span class="stat-value" id="mean-divergence">-</span>
-                </div>
-            </div>
-            
-            <!-- Training Metrics -->
-            <div class="card">
-                <h2>📈 Training Metrics</h2>
-                <div class="stat-box">
-                    <span class="stat-label">Average Loss</span>
-                    <span class="stat-value" id="avg-loss">-</span>
-                </div>
-                <div class="stat-box">
-                    <span class="stat-label">Average Accuracy</span>
-                    <span class="stat-value" id="avg-accuracy">-</span>
-                </div>
-                <div class="stat-box">
-                    <span class="stat-label">Best Accuracy</span>
-                    <span class="stat-value" id="best-accuracy">-</span>
-                </div>
-                <div class="stat-box">
-                    <span class="stat-label">Training Time</span>
-                    <span class="stat-value" id="training-time">-</span>
-                </div>
-                <div class="progress-bar">
-                    <div class="progress-fill" id="accuracy-progress" style="width: 0%"></div>
-                </div>
-            </div>
-            
-            <!-- Controls -->
-            <div class="card">
-                <h2>🎮 Controls</h2>
-                <div class="controls">
-                    <button class="btn btn-primary" onclick="sendCommand('start_training')">
-                        ▶️ Start Training
-                    </button>
-                    <button class="btn btn-danger" onclick="sendCommand('stop_training')">
-                        ⏹️ Stop Training
-                    </button>
-                    <button class="btn btn-secondary" onclick="refreshData()">
-                        🔄 Refresh
-                    </button>
-                    <button class="btn btn-secondary" onclick="downloadResults()">
-                        📥 Download Results
-                    </button>
-                </div>
-            </div>
-        </div>
-        
-        <!-- Robots Grid -->
-        <div class="card">
-            <h2>🤖 Robot Agents</h2>
-            <div class="grid" id="robots-container">
-                <p style="color: #666;">Waiting for robots to connect...</p>
-            </div>
-        </div>
-        
-        <!-- Digital Twin -->
-        <div class="card">
-            <h2>🌐 Digital Twin Visualization</h2>
-            <div class="digital-twin-container">
-                <img id="digital-twin-img" src="/api/digital-twin" alt="Digital Twin" 
-                     onerror="this.style.display='none'; document.getElementById('twin-error').style.display='block';">
-                <p id="twin-error" style="display:none; color:#666;">Digital twin image not available yet</p>
-                <p class="refresh-notice">Updates every 5 seconds</p>
-            </div>
-        </div>
-        
-        <!-- Event Log -->
-        <div class="card">
-            <h2>📋 Event Log</h2>
-            <div class="log-container" id="event-log">
-                <div class="log-entry">
-                    <span class="log-time">--:--:--</span>
-                    Waiting for events...
-                </div>
-            </div>
-        </div>
-    </div>
-    
-    <script>
-        // Auto-refresh data
-        function refreshData() {
-            fetch('/api/status')
-                .then(response => response.json())
-                .then(data => updateDashboard(data))
-                .catch(err => console.error('Error fetching data:', err));
-        }
-        
-        function updateDashboard(data) {
-            // System status
-            document.getElementById('coordinator-state').textContent = data.coordinator_state || '-';
-            document.getElementById('current-round').textContent = data.current_round || 0;
-            document.getElementById('total-aggregations').textContent = data.total_aggregations || 0;
-            document.getElementById('active-robots').textContent = data.active_robots || 0;
-            document.getElementById('mean-divergence').textContent = 
-                data.mean_divergence ? data.mean_divergence.toFixed(4) : '-';
-            
-            // Training metrics
-            document.getElementById('avg-loss').textContent = 
-                data.avg_loss ? data.avg_loss.toFixed(4) : '-';
-            document.getElementById('avg-accuracy').textContent = 
-                data.avg_accuracy ? data.avg_accuracy.toFixed(1) + '%' : '-';
-            document.getElementById('best-accuracy').textContent = 
-                data.best_accuracy ? data.best_accuracy.toFixed(1) + '%' : '-';
-            document.getElementById('training-time').textContent = 
-                data.training_time ? formatTime(data.training_time) : '-';
-            
-            // Progress bar
-            const progress = data.avg_accuracy || 0;
-            document.getElementById('accuracy-progress').style.width = progress + '%';
-            
-            // Update robots
-            updateRobots(data.robots || {});
-            
-            // Update digital twin image (cache bust)
-            const img = document.getElementById('digital-twin-img');
-            img.src = '/api/digital-twin?' + new Date().getTime();
-        }
-        
-        function updateRobots(robots) {
-            const container = document.getElementById('robots-container');
-            
-            if (Object.keys(robots).length === 0) {
-                container.innerHTML = '<p style="color: #666;">Waiting for robots to connect...</p>';
-                return;
-            }
-            
-            let html = '';
-            for (const [id, robot] of Object.entries(robots)) {
-                const statusClass = robot.is_training ? 'status-training' : 
-                                   robot.accuracy > 60 ? 'status-complete' : 'status-idle';
-                const statusText = robot.is_training ? 'Training' : 
-                                  robot.accuracy > 60 ? 'Ready' : 'Idle';
-                
-                html += `
-                    <div class="robot-card">
-                        <div class="robot-header">
-                            <span class="robot-name">🤖 ${id}</span>
-                            <span class="robot-status ${statusClass}">${statusText}</span>
-                        </div>
-                        <div class="stat-box">
-                            <span class="stat-label">Loss</span>
-                            <span>${robot.loss ? robot.loss.toFixed(4) : '-'}</span>
-                        </div>
-                        <div class="stat-box">
-                            <span class="stat-label">Accuracy</span>
-                            <span>${robot.accuracy ? robot.accuracy.toFixed(1) + '%' : '-'}</span>
-                        </div>
-                        <div class="stat-box">
-                            <span class="stat-label">Rounds</span>
-                            <span>${robot.rounds || 0}</span>
-                        </div>
-                        <div class="progress-bar">
-                            <div class="progress-fill" style="width: ${robot.accuracy || 0}%"></div>
-                        </div>
-                    </div>
-                `;
-            }
-            container.innerHTML = html;
-        }
-        
-        function sendCommand(cmd) {
-            fetch('/api/command', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({command: cmd})
-            })
-            .then(response => response.json())
-            .then(data => {
-                addLogEntry(`Command sent: ${cmd}`);
-                refreshData();
-            })
-            .catch(err => addLogEntry(`Error: ${err}`));
-        }
-        
-        function downloadResults() {
-            window.location.href = '/api/download-results';
-        }
-        
-        function addLogEntry(message) {
-            const log = document.getElementById('event-log');
-            const time = new Date().toLocaleTimeString();
-            const entry = document.createElement('div');
-            entry.className = 'log-entry';
-            entry.innerHTML = `<span class="log-time">${time}</span>${message}`;
-            log.insertBefore(entry, log.firstChild);
-            
-            // Keep only last 50 entries
-            while (log.children.length > 50) {
-                log.removeChild(log.lastChild);
-            }
-        }
-        
-        function formatTime(seconds) {
-            const mins = Math.floor(seconds / 60);
-            const secs = Math.floor(seconds % 60);
-            return `${mins}m ${secs}s`;
-        }
-        
-        // Initial load and auto-refresh
-        refreshData();
-        setInterval(refreshData, 2000);
-        
-        // Log initial connection
-        addLogEntry('Dashboard connected');
-    </script>
-</body>
-</html>
-"""
+# Try importing custom service interfaces for service client integration
+try:
+    from fl_robots_interfaces.srv import TriggerAggregation, UpdateHyperparameters, GetModelInfo
+    CUSTOM_INTERFACES = True
+except ImportError:
+    CUSTOM_INTERFACES = False
 
 
 class WebDashboardNode(Node):
     """
-    Web Dashboard Node for Federated Learning System.
+    Web Dashboard Node — MVC Controller integrated with ROS2.
 
-    Provides a web-based UI for monitoring and controlling the FL system.
+    Model: Collects state via ROS2 subscriptions
+    View: Serves HTML templates with Chart.js and Canvas
+    Controller: Flask routes + Socket.IO events for bidirectional communication
     """
 
     def __init__(self):
         super().__init__('web_dashboard')
 
         self.cb_group = ReentrantCallbackGroup()
+        self.cb_group_clients = ReentrantCallbackGroup()
 
         # Parameters
         self.declare_parameter('port', 5000)
@@ -553,7 +82,7 @@ class WebDashboardNode(Node):
 
         self.get_logger().info(f'Initializing Web Dashboard on {self.host}:{self.port}')
 
-        # State storage
+        # ── Model: State storage ────────────────────────────────────
         self.state_lock = threading.Lock()
         self.robots: Dict[str, Dict] = {}
         self.coordinator_state = "IDLE"
@@ -561,7 +90,9 @@ class WebDashboardNode(Node):
         self.total_aggregations = 0
         self.mean_divergence = 0.0
         self.start_time = time.time()
-        self.event_log: deque = deque(maxlen=100)
+        self.event_log: deque = deque(maxlen=200)
+        self.loss_history: List[Dict] = []
+        self.acc_history: List[Dict] = []
 
         # QoS
         qos_reliable = QoSProfile(
@@ -571,42 +102,59 @@ class WebDashboardNode(Node):
             durability=DurabilityPolicy.TRANSIENT_LOCAL
         )
 
-        # Subscribers
+        # ── Subscribers ─────────────────────────────────────────────
         self.robot_status_sub = self.create_subscription(
             String, '/fl/robot_status', self.robot_status_callback,
-            qos_reliable, callback_group=self.cb_group
-        )
+            qos_reliable, callback_group=self.cb_group)
 
         self.aggregation_sub = self.create_subscription(
             String, '/fl/aggregation_metrics', self.aggregation_callback,
-            qos_reliable, callback_group=self.cb_group
-        )
+            qos_reliable, callback_group=self.cb_group)
 
         self.coordinator_sub = self.create_subscription(
             String, '/fl/coordinator_status', self.coordinator_callback,
-            qos_reliable, callback_group=self.cb_group
-        )
+            qos_reliable, callback_group=self.cb_group)
 
-        # Publisher for commands
+        # ── Publisher for commands ──────────────────────────────────
         self.command_publisher = self.create_publisher(
-            String, '/fl/training_command', qos_reliable
-        )
+            String, '/fl/training_command', qos_reliable)
 
-        # Start Flask in separate thread
+        # ── Service Clients (for interactive control) ───────────────
+        self.trigger_agg_client = None
+        self.update_hp_clients: Dict[str, Any] = {}
+
+        if CUSTOM_INTERFACES:
+            self.trigger_agg_client = self.create_client(
+                TriggerAggregation, '/fl/trigger_aggregation',
+                callback_group=self.cb_group_clients)
+            self.get_logger().info('Service client: /fl/trigger_aggregation')
+
+        # Socket.IO reference (set in _run_flask)
+        self.socketio = None
+
+        # Start Flask/SocketIO in separate thread
         if FLASK_AVAILABLE:
             self.flask_thread = threading.Thread(target=self._run_flask, daemon=True)
             self.flask_thread.start()
         else:
             self.get_logger().error('Flask not available, web dashboard disabled')
 
-        self.get_logger().info(f'Web Dashboard available at http://{self.host}:{self.port}')
+        # Timer to push updates via WebSocket
+        self.push_timer = self.create_timer(
+            1.5, self._push_ws_update, callback_group=self.cb_group)
+
+        self.get_logger().info(f'Web Dashboard: http://{self.host}:{self.port}')
+        self.get_logger().info(f'WebSocket: {"ENABLED" if SOCKETIO_AVAILABLE else "DISABLED (polling fallback)"}')
+        self.get_logger().info(f'Service clients: {"ENABLED" if CUSTOM_INTERFACES else "DISABLED"}')
+
+    # ────────────────────────────────────────────────────────────────
+    # Model: ROS2 Callbacks
+    # ────────────────────────────────────────────────────────────────
 
     def robot_status_callback(self, msg: String):
-        """Handle robot status updates."""
         try:
             data = json.loads(msg.data)
             robot_id = data.get('robot_id')
-
             if not robot_id:
                 return
 
@@ -626,39 +174,52 @@ class WebDashboardNode(Node):
             self.get_logger().error(f'Error in robot status callback: {e}')
 
     def aggregation_callback(self, msg: String):
-        """Handle aggregation metrics."""
         try:
             data = json.loads(msg.data)
             with self.state_lock:
                 self.total_aggregations = data.get('round', self.total_aggregations)
                 self.mean_divergence = data.get('mean_divergence', 0.0)
                 self._add_event(f'Aggregation round {self.total_aggregations} complete')
+
+                # Record history for charts
+                snapshot_loss = {}
+                snapshot_acc = {}
+                for rid, r in self.robots.items():
+                    snapshot_loss[rid] = {'loss': r.get('loss')}
+                    snapshot_acc[rid] = {'accuracy': r.get('accuracy')}
+                self.loss_history.append({'round': self.total_aggregations, 'robots': snapshot_loss})
+                self.acc_history.append({'round': self.total_aggregations, 'robots': snapshot_acc})
         except Exception as e:
             self.get_logger().error(f'Error in aggregation callback: {e}')
 
     def coordinator_callback(self, msg: String):
-        """Handle coordinator status."""
         try:
             data = json.loads(msg.data)
             with self.state_lock:
                 old_state = self.coordinator_state
                 self.coordinator_state = data.get('state', 'UNKNOWN')
                 self.current_round = data.get('current_round', 0)
-
                 if old_state != self.coordinator_state:
-                    self._add_event(f'Coordinator state: {self.coordinator_state}')
+                    self._add_event(f'Coordinator: {self.coordinator_state}')
         except Exception as e:
             self.get_logger().error(f'Error in coordinator callback: {e}')
 
     def _add_event(self, message: str):
-        """Add event to log."""
-        self.event_log.append({
-            'time': time.strftime('%H:%M:%S'),
-            'message': message
-        })
+        self.event_log.append({'time': time.strftime('%H:%M:%S'), 'message': message})
+
+    def _push_ws_update(self):
+        """Timer callback: push state to all WebSocket clients."""
+        if self.socketio:
+            try:
+                self.socketio.emit('status_update', self._get_status(), namespace='/')
+            except Exception:
+                pass
+
+    # ────────────────────────────────────────────────────────────────
+    # Model: State Retrieval
+    # ────────────────────────────────────────────────────────────────
 
     def _get_status(self) -> Dict:
-        """Get current system status."""
         with self.state_lock:
             robots_data = {}
             total_loss = 0
@@ -686,11 +247,16 @@ class WebDashboardNode(Node):
                 'best_accuracy': best_acc if best_acc > 0 else None,
                 'training_time': time.time() - self.start_time,
                 'robots': robots_data,
-                'events': list(self.event_log)
+                'events': list(self.event_log),
+                'loss_history': self.loss_history[-50:],
+                'acc_history': self.acc_history[-50:],
             }
 
+    # ────────────────────────────────────────────────────────────────
+    # Controller: Commands
+    # ────────────────────────────────────────────────────────────────
+
     def _send_command(self, command: str):
-        """Send training command."""
         msg = String()
         msg.data = json.dumps({
             'command': command,
@@ -700,16 +266,77 @@ class WebDashboardNode(Node):
         self.command_publisher.publish(msg)
         self._add_event(f'Sent command: {command}')
 
+    def _call_trigger_aggregation(self) -> Dict:
+        """Call TriggerAggregation service."""
+        if not self.trigger_agg_client or not self.trigger_agg_client.wait_for_service(timeout_sec=1.0):
+            return {'success': False, 'message': 'Service not available'}
+
+        req = TriggerAggregation.Request()
+        req.force = True
+        req.min_participants = 0
+        future = self.trigger_agg_client.call_async(req)
+        # Non-blocking: return pending
+        return {'success': True, 'message': 'Aggregation triggered (async)'}
+
+    def _create_hp_client(self, robot_id: str):
+        """Lazily create a service client for updating a robot's hyperparameters."""
+        if robot_id not in self.update_hp_clients and CUSTOM_INTERFACES:
+            self.update_hp_clients[robot_id] = self.create_client(
+                UpdateHyperparameters,
+                f'/fl/{robot_id}/update_hyperparameters',
+                callback_group=self.cb_group_clients
+            )
+
+    def _call_update_hyperparameters(self, lr: float, bs: int, epochs: int) -> Dict:
+        """Update hyperparameters on all known robots via services."""
+        results = []
+        for rid in list(self.robots.keys()):
+            self._create_hp_client(rid)
+            client = self.update_hp_clients.get(rid)
+            if client and client.wait_for_service(timeout_sec=0.5):
+                req = UpdateHyperparameters.Request()
+                req.robot_id = rid
+                req.learning_rate = lr
+                req.batch_size = bs
+                req.local_epochs = epochs
+                req.samples_per_round = 0
+                client.call_async(req)
+                results.append(rid)
+
+        if results:
+            return {'success': True, 'message': f'Updated {len(results)} robots: {results}'}
+        return {'success': False, 'message': 'No robots available or service not ready'}
+
+    # ────────────────────────────────────────────────────────────────
+    # View: Flask + Socket.IO Server
+    # ────────────────────────────────────────────────────────────────
+
     def _run_flask(self):
-        """Run Flask web server."""
-        app = Flask(__name__)
+        """Run Flask web server with optional Socket.IO."""
+        # Resolve template and static directories
+        web_dir = Path(__file__).parent / 'web'
+        template_dir = web_dir / 'templates'
+        static_dir = web_dir / 'static'
+
+        app = Flask(__name__,
+                    template_folder=str(template_dir),
+                    static_folder=str(static_dir))
         CORS(app)
 
-        node = self  # Reference to ROS node
+        node = self
+
+        # Initialize Socket.IO if available
+        if SOCKETIO_AVAILABLE:
+            socketio = SocketIO(app, cors_allowed_origins='*', async_mode='threading')
+            node.socketio = socketio
+        else:
+            socketio = None
+
+        # ── Routes (View + Controller) ──────────────────────────────
 
         @app.route('/')
         def index():
-            return render_template_string(DASHBOARD_HTML)
+            return render_template('dashboard.html')
 
         @app.route('/api/status')
         def get_status():
@@ -724,9 +351,32 @@ class WebDashboardNode(Node):
                 return jsonify({'success': True, 'command': cmd})
             return jsonify({'success': False, 'error': 'No command specified'})
 
+        @app.route('/api/trigger-aggregation', methods=['POST'])
+        def trigger_aggregation():
+            if CUSTOM_INTERFACES:
+                result = node._call_trigger_aggregation()
+                return jsonify(result)
+            else:
+                # Fallback: publish command
+                node._send_command('publish_weights')
+                return jsonify({'success': True, 'message': 'Published weights request'})
+
+        @app.route('/api/update-hyperparameters', methods=['POST'])
+        def update_hyperparameters():
+            data = request.get_json()
+            lr = float(data.get('learning_rate', 0))
+            bs = int(data.get('batch_size', 0))
+            ep = int(data.get('local_epochs', 0))
+
+            if CUSTOM_INTERFACES:
+                result = node._call_update_hyperparameters(lr, bs, ep)
+                return jsonify(result)
+            else:
+                return jsonify({'success': False, 'message': 'Custom interfaces not available'})
+
         @app.route('/api/digital-twin')
         def get_digital_twin():
-            twin_path = f'{node.output_dir}/digital_twin.png'
+            twin_path = os.path.join(node.output_dir, 'digital_twin.png')
             if os.path.exists(twin_path):
                 return send_file(twin_path, mimetype='image/png')
             return '', 404
@@ -739,17 +389,27 @@ class WebDashboardNode(Node):
             memory_file = io.BytesIO()
             with zipfile.ZipFile(memory_file, 'w', zipfile.ZIP_DEFLATED) as zf:
                 for filename in ['aggregation_history.csv', 'robot_metrics.json',
-                               'training_summary.json', 'digital_twin.png']:
-                    filepath = f'{node.output_dir}/{filename}'
+                                'training_summary.json', 'digital_twin.png',
+                                'aggregation_history.json']:
+                    filepath = os.path.join(node.output_dir, filename)
                     if os.path.exists(filepath):
                         zf.write(filepath, filename)
-
             memory_file.seek(0)
             return send_file(memory_file, mimetype='application/zip',
                            as_attachment=True, download_name='fl_results.zip')
 
-        # Run Flask
-        app.run(host=node.host, port=node.port, threaded=True, use_reloader=False)
+        @app.route('/api/robots')
+        def get_robots():
+            with node.state_lock:
+                return jsonify(list(node.robots.keys()))
+
+        # ── Start server ────────────────────────────────────────────
+        if socketio:
+            socketio.run(app, host=node.host, port=node.port,
+                        allow_unsafe_werkzeug=True, use_reloader=False)
+        else:
+            app.run(host=node.host, port=node.port,
+                   threaded=True, use_reloader=False)
 
 
 def main(args=None):

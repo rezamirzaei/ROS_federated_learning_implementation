@@ -15,6 +15,8 @@ RUN apt-get update && apt-get install -y \
     ros-humble-sensor-msgs \
     ros-humble-nav-msgs \
     ros-humble-visualization-msgs \
+    ros-humble-lifecycle-msgs \
+    ros-humble-rclcpp-lifecycle \
     ros-humble-rviz2 \
     ros-humble-plotjuggler-ros \
     ros-humble-ros2launch \
@@ -35,7 +37,10 @@ RUN pip3 install --no-cache-dir \
     pandas \
     pytest \
     flask \
-    flask-cors
+    flask-cors \
+    flask-socketio \
+    python-socketio \
+    eventlet
 
 # Create workspace
 WORKDIR /ros2_ws
@@ -44,9 +49,17 @@ RUN mkdir -p /ros2_ws/src
 # Copy source code
 COPY src/ /ros2_ws/src/
 
-# Build the workspace
+# Build the workspace (interfaces first, then fl_robots)
 RUN /bin/bash -c "source /opt/ros/humble/setup.bash && \
-    colcon build --symlink-install"
+    colcon build --symlink-install --packages-select fl_robots_interfaces && \
+    source install/setup.bash && \
+    colcon build --symlink-install --packages-select fl_robots"
+
+# Copy tests and scripts
+COPY tests/ /ros2_ws/tests/
+
+# Create results directory
+RUN mkdir -p /ros2_ws/results
 
 # Source the workspace in bashrc
 RUN echo "source /opt/ros/humble/setup.bash" >> ~/.bashrc

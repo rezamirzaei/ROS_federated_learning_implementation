@@ -1,6 +1,6 @@
-# ROS2 Federated Learning Multi-Robot System
+# ROS2 Federated Learning Multi-Robot System — Architecture
 
-A comprehensive ROS2 project demonstrating distributed federated learning across multiple simulated robot agents. This project showcases proficiency in ROS2 concepts, distributed machine learning, and containerized deployment.
+A comprehensive ROS2 project demonstrating distributed federated learning across multiple simulated robot agents. This project showcases deep proficiency in ROS2 concepts, distributed machine learning, and containerized deployment.
 
 ## 🎯 Project Overview
 
@@ -9,277 +9,223 @@ This system implements **Federated Averaging (FedAvg)** across multiple robot ag
 - Shares model weights with a central aggregator
 - Receives updated global model for improved performance
 
-### Key Features
-- **Distributed Learning**: Multiple robots learn collaboratively without sharing raw data
-- **Non-IID Data Handling**: Each robot has a slightly different data distribution
-- **ROS2 Best Practices**: Demonstrates topics, services, actions, parameters, and QoS
-- **Docker Deployment**: Fully containerized for easy deployment on macOS Intel
+### ROS2 Concepts Demonstrated
+
+| Concept | Implementation |
+|---------|---------------|
+| **Topics** | Model weights, status heartbeats, training commands, metrics |
+| **Services** | `RegisterRobot`, `TriggerAggregation`, `GetModelInfo`, `UpdateHyperparameters` |
+| **Actions** | `TrainRound` with real-time feedback and cancellation support |
+| **Lifecycle Nodes** | Aggregator: configure → activate → deactivate → cleanup → shutdown |
+| **Custom Interfaces** | `fl_robots_interfaces` package (msg/srv/action definitions) |
+| **Parameters** | Dynamic reconfiguration of learning rate, batch size, epochs |
+| **QoS Profiles** | Reliable + Transient Local for critical data; Best Effort for metrics |
+| **Callback Groups** | Reentrant (actions, services) + Mutually Exclusive (timers) |
+| **Multi-threaded Executor** | All nodes use `MultiThreadedExecutor` with 4 threads |
+| **Launch System** | Parameterized multi-node launch with staggered startup |
+| **Web Dashboard** | Flask + Socket.IO MVC architecture with real-time WebSocket |
 
 ## 🏗️ Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                        ROS2 DDS Network                         │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐     │
-│  │   Robot 1    │    │   Robot 2    │    │   Robot 3    │     │
-│  │              │    │              │    │              │     │
-│  │ Local Model  │    │ Local Model  │    │ Local Model  │     │
-│  │   Training   │    │   Training   │    │   Training   │     │
-│  └──────┬───────┘    └──────┬───────┘    └──────┬───────┘     │
-│         │                   │                   │              │
-│         │    /fl/robot_X/model_weights         │              │
-│         └───────────────────┼───────────────────┘              │
-│                             │                                  │
-│                             ▼                                  │
-│                    ┌────────────────┐                          │
-│                    │   Aggregator   │                          │
-│                    │                │                          │
-│                    │   FedAvg       │                          │
-│                    │   Algorithm    │                          │
-│                    └────────┬───────┘                          │
-│                             │                                  │
-│                             │ /fl/global_model                 │
-│                             │                                  │
-│         ┌───────────────────┼───────────────────┐              │
-│         │                   │                   │              │
-│         ▼                   ▼                   ▼              │
-│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐     │
-│  │   Robot 1    │    │   Robot 2    │    │   Robot 3    │     │
-│  │  (Updated)   │    │  (Updated)   │    │  (Updated)   │     │
-│  └──────────────┘    └──────────────┘    └──────────────┘     │
-│                                                                 │
-│  ┌──────────────┐                       ┌──────────────┐       │
-│  │  Coordinator │ ◄─────────────────────│   Monitor    │       │
-│  │              │    Status/Metrics     │              │       │
-│  │ Orchestrates │                       │ Visualizes   │       │
-│  │  Training    │                       │  Metrics     │       │
-│  └──────────────┘                       └──────────────┘       │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│                          ROS2 DDS Network                               │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  ┌──────────────────────────────────────────────────────────────────┐   │
+│  │                     Custom Interfaces                            │   │
+│  │  fl_robots_interfaces:                                           │   │
+│  │    msg: ModelWeights, TrainingMetrics, RobotStatus, Aggregation  │   │
+│  │    srv: RegisterRobot, TriggerAggregation, GetModelInfo,         │   │
+│  │         UpdateHyperparameters                                    │   │
+│  │    action: TrainRound (goal/feedback/result)                     │   │
+│  └──────────────────────────────────────────────────────────────────┘   │
+│                                                                         │
+│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐              │
+│  │   Robot 1    │    │   Robot 2    │    │   Robot 3    │              │
+│  │              │    │              │    │              │              │
+│  │ Action Srv   │    │ Action Srv   │    │ Action Srv   │              │
+│  │ Services     │    │ Services     │    │ Services     │              │
+│  │ Local Model  │    │ Local Model  │    │ Local Model  │              │
+│  └──────┬───────┘    └──────┬───────┘    └──────┬───────┘              │
+│         │                   │                   │                       │
+│         │    Topics + Services + Actions        │                       │
+│         └───────────────────┼───────────────────┘                       │
+│                             │                                           │
+│                             ▼                                           │
+│                    ┌─────────────────┐                                  │
+│                    │   Aggregator    │                                  │
+│                    │ (Lifecycle Node)│                                  │
+│                    │                 │                                  │
+│                    │ FedAvg Server   │                                  │
+│                    │ Services:       │                                  │
+│                    │  RegisterRobot  │                                  │
+│                    │  TriggerAgg     │                                  │
+│                    │  GetModelInfo   │                                  │
+│                    └────────┬────────┘                                  │
+│                             │                                           │
+│         ┌───────────────────┼───────────────────┐                       │
+│         ▼                   ▼                   ▼                       │
+│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐              │
+│  │   Robot 1    │    │   Robot 2    │    │   Robot 3    │              │
+│  │  (Updated)   │    │  (Updated)   │    │  (Updated)   │              │
+│  └──────────────┘    └──────────────┘    └──────────────┘              │
+│                                                                         │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌────────────┐ │
+│  │  Coordinator │  │   Monitor    │  │ Digital Twin │  │    Web     │ │
+│  │  State Mach  │  │  Metrics &   │  │ Matplotlib   │  │ Dashboard  │ │
+│  │  Orchestrate │  │  Persistence │  │ Visualization│  │ MVC+WS    │ │
+│  └──────────────┘  └──────────────┘  └──────────────┘  └────────────┘ │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## 📁 Project Structure
 
 ```
 ROS/
+├── main.py                     # Entry point with quick test
+├── run.sh                      # Docker management script
+├── pyproject.toml              # Python project config
 ├── docker/
-│   ├── Dockerfile              # ROS2 Humble + PyTorch image
-│   ├── docker-compose.yaml     # Multi-container orchestration
+│   ├── Dockerfile              # ROS2 Humble + PyTorch + Flask
+│   ├── docker-compose.yaml     # 7-container orchestration with healthchecks
 │   └── ros_entrypoint.sh       # Container entrypoint
-│
 ├── src/
-│   └── fl_robots/
+│   ├── fl_robots_interfaces/   # Custom ROS2 interfaces (CMake package)
+│   │   ├── CMakeLists.txt
+│   │   ├── package.xml
+│   │   ├── msg/                # ModelWeights, TrainingMetrics, RobotStatus, AggregationResult
+│   │   ├── srv/                # RegisterRobot, TriggerAggregation, GetModelInfo, UpdateHyperparameters
+│   │   └── action/             # TrainRound (goal/feedback/result)
+│   └── fl_robots/              # Main ROS2 Python package
 │       ├── fl_robots/
-│       │   ├── __init__.py
-│       │   ├── robot_agent.py      # Robot agent node
-│       │   ├── aggregator.py       # FedAvg aggregator node
-│       │   ├── coordinator.py      # Training orchestrator
-│       │   ├── monitor.py          # Metrics visualization
+│       │   ├── robot_agent.py  # Action Server + Services + Parameters
+│       │   ├── aggregator.py   # Lifecycle Node + FedAvg + Services
+│       │   ├── coordinator.py  # State machine orchestration
+│       │   ├── monitor.py      # Metrics collection & persistence
+│       │   ├── digital_twin.py # Matplotlib visualization
+│       │   ├── web_dashboard.py# MVC + WebSocket (Flask + Socket.IO)
+│       │   ├── web/            # Web assets
+│       │   │   ├── templates/  # Jinja2 HTML templates
+│       │   │   └── static/     # CSS + JS (Chart.js, Socket.IO)
 │       │   └── models/
-│       │       ├── __init__.py
-│       │       └── simple_nn.py    # Neural network models
-│       │
+│       │       └── simple_nn.py# Neural network + FedAvg + divergence
 │       ├── launch/
-│       │   └── fl_system.launch.py # System launch file
-│       │
-│       ├── config/
-│       │   └── params.yaml         # Configuration parameters
-│       │
-│       ├── package.xml
-│       ├── setup.py
-│       └── setup.cfg
-│
+│       │   └── fl_system.launch.py
+│       └── config/
+│           └── params.yaml
 ├── tests/
-│   ├── test_aggregation.py         # Unit tests
-│   └── test_ros_integration.py     # Integration tests
-│
+│   ├── test_aggregation.py     # Unit tests (model, FedAvg, divergence)
+│   └── test_ros_integration.py # Integration tests (interfaces, pub/sub)
+├── scripts/
+│   ├── visualize.py            # Post-training visualization
+│   └── run.sh                  # Alternative run script
 ├── docs/
-│   └── ARCHITECTURE.md             # This file
-│
-├── logs/                           # Runtime logs
-├── models/                         # Saved models
-└── results/                        # Training results
+│   └── ARCHITECTURE.md         # This file
+├── results/                    # Training outputs
+└── logs/                       # Runtime logs
 ```
 
-## 🚀 Quick Start
+## 🔧 Custom Interfaces (fl_robots_interfaces)
 
-### Prerequisites
-- Docker Desktop for Mac (Intel)
-- At least 8GB RAM available for Docker
+### Messages
+| Message | Description |
+|---------|-------------|
+| `ModelWeights` | Serialized neural network weights with metadata |
+| `TrainingMetrics` | Real-time training progress (epoch, loss, accuracy) |
+| `RobotStatus` | Robot heartbeat with status enum (IDLE/TRAINING/UPLOADING/WAITING/ERROR) |
+| `AggregationResult` | FedAvg round result with per-robot metrics |
 
-### Running the System
+### Services
+| Service | Description |
+|---------|-------------|
+| `RegisterRobot` | Register a robot agent with the federation |
+| `TriggerAggregation` | Manually trigger federated averaging (force option) |
+| `GetModelInfo` | Query model information from robot or aggregator |
+| `UpdateHyperparameters` | Dynamically update training hyperparameters per robot |
 
-1. **Build and start all containers:**
-   ```bash
-   cd docker
-   docker-compose up --build
-   ```
+### Actions
+| Action | Description |
+|--------|-------------|
+| `TrainRound` | Execute a training round with real-time feedback and cancellation |
 
-2. **View logs from specific container:**
-   ```bash
-   docker-compose logs -f aggregator
-   docker-compose logs -f robot_1
-   docker-compose logs -f coordinator
-   ```
+## 📊 Topics
 
-3. **Stop the system:**
-   ```bash
-   docker-compose down
-   ```
+| Topic | Type | QoS | Description |
+|-------|------|-----|-------------|
+| `/fl/robot_status` | `String` | Reliable/TransientLocal | Robot registration & heartbeat |
+| `/fl/{robot_id}/model_weights` | `String` | Reliable/TransientLocal | Local model weights |
+| `/fl/global_model` | `String` | Reliable/TransientLocal | Aggregated global model |
+| `/fl/training_command` | `String` | Reliable/TransientLocal | Training orchestration |
+| `/fl/aggregation_metrics` | `String` | Reliable/TransientLocal | Performance metrics |
+| `/fl/coordinator_status` | `String` | Reliable/TransientLocal | Coordinator state |
+| `/fl/{robot_id}/metrics` | `String` | BestEffort | Training progress |
+| `/fl/{robot_id}/typed_status` | `RobotStatus` | Reliable/TransientLocal | Typed status |
+| `/fl/{robot_id}/typed_metrics` | `TrainingMetrics` | BestEffort | Typed metrics |
 
-### Running Locally (Development)
+## 🌐 Web Dashboard (MVC Architecture)
 
-1. **Build the ROS2 workspace:**
-   ```bash
-   cd /path/to/ROS
-   source /opt/ros/humble/setup.bash
-   colcon build --symlink-install
-   source install/setup.bash
-   ```
+### Architecture
+- **Model**: ROS2 subscriber callbacks collect real-time state from all nodes
+- **View**: Jinja2 HTML templates + Chart.js (loss/accuracy graphs) + Canvas (topology)
+- **Controller**: Flask routes + Socket.IO for bidirectional WebSocket communication
 
-2. **Launch the complete system:**
-   ```bash
-   ros2 launch fl_robots fl_system.launch.py
-   ```
+### Features
+- Real-time WebSocket push updates (1.5s interval)
+- Interactive hyperparameter tuning (learning rate, batch size, epochs)
+- Force aggregation trigger via ROS2 service client
+- Live network topology canvas
+- Loss/accuracy charts with Chart.js
+- Per-robot status cards with progress bars
+- Event log stream
+- Results download (ZIP)
 
-3. **Launch with custom parameters:**
-   ```bash
-   ros2 launch fl_robots fl_system.launch.py total_rounds:=30 learning_rate:=0.0005
-   ```
+### Access
+```
+http://localhost:5000      # Direct
+http://localhost:8080      # Docker port mapping
+```
 
-## 🔧 ROS2 Concepts Demonstrated
+## 📊 Algorithm: Federated Averaging (FedAvg)
 
-### Topics
-| Topic | Type | Description |
-|-------|------|-------------|
-| `/fl/robot_status` | `std_msgs/String` | Robot registration and status |
-| `/fl/{robot_id}/model_weights` | `std_msgs/String` | Local model weights |
-| `/fl/global_model` | `std_msgs/String` | Aggregated global model |
-| `/fl/training_command` | `std_msgs/String` | Training commands |
-| `/fl/aggregation_metrics` | `std_msgs/String` | Aggregation statistics |
-| `/fl/coordinator_status` | `std_msgs/String` | Coordinator state |
-| `/fl/{robot_id}/metrics` | `std_msgs/String` | Training metrics |
-
-### Parameters
-Each node has configurable parameters:
-
-**Robot Agent:**
-- `robot_id`: Unique identifier
-- `learning_rate`: Local SGD learning rate
-- `batch_size`: Training batch size
-- `local_epochs`: Epochs per round
-- `samples_per_round`: Training samples per round
-
-**Aggregator:**
-- `min_robots`: Minimum robots for aggregation
-- `aggregation_timeout`: Timeout for weight collection
-- `participation_threshold`: Required participation ratio
-
-**Coordinator:**
-- `total_rounds`: Total federated rounds
-- `round_timeout`: Per-round timeout
-- `evaluation_interval`: Evaluation frequency
-
-### QoS Profiles
-- **Reliable + Transient Local**: For critical messages (weights, commands)
-- **Best Effort**: For high-frequency metrics
-
-### Multi-threading
-All nodes use `MultiThreadedExecutor` with callback groups for concurrent operation.
-
-## 📊 Algorithm: Federated Averaging
-
-The FedAvg algorithm (McMahan et al., 2017):
+McMahan et al., 2017:
 
 1. **Initialize** global model W₀
-2. **For each round t = 1, 2, ..., T:**
+2. **For each round t:**
    - Server sends W_t to all robots
-   - Each robot k:
-     - Initializes local model with W_t
-     - Trains on local data for E epochs
-     - Sends updated weights W_k^{t+1} to server
+   - Each robot k trains on local data for E epochs
+   - Robots publish updated weights W_k^{t+1}
    - Server aggregates: W_{t+1} = Σ (n_k/n) × W_k^{t+1}
 
-### Non-IID Data Handling
-Each robot generates synthetic data with a robot-specific bias, simulating:
-- Different sensor characteristics
-- Different operating environments
-- Non-identical data distributions
+### Non-IID Data
+Each robot generates synthetic sensor data with robot-specific biases, simulating
+different operating environments and sensor characteristics.
 
 ## 🧪 Testing
 
-### Run Unit Tests
 ```bash
-cd /ros2_ws
+# Unit tests (no ROS2 required)
 python -m pytest tests/test_aggregation.py -v
-```
 
-### Run Integration Tests
-```bash
-# Requires ROS2 environment
+# Integration tests (requires ROS2 + custom interfaces)
 python -m pytest tests/test_ros_integration.py -v
+
+# Quick component test
+python main.py test
+
+# Full test suite via Docker
+./run.sh test
 ```
-
-### Manual Testing
-```bash
-# Terminal 1: Start aggregator
-ros2 run fl_robots aggregator
-
-# Terminal 2: Start robot
-ros2 run fl_robots robot_agent --ros-args -p robot_id:=robot_0
-
-# Terminal 3: Monitor topics
-ros2 topic echo /fl/robot_status
-
-# Terminal 4: Check node status
-ros2 node list
-ros2 topic list
-ros2 param list /aggregator
-```
-
-## 📈 Results and Metrics
-
-After training, results are saved to `/results/`:
-
-- `aggregation_history.json`: Per-round aggregation metrics
-- `aggregation_history.csv`: CSV format for analysis
-- `robot_metrics.json`: Per-robot training history
-- `training_summary.json`: Overall training summary
-
-### Key Metrics
-- **Gradient Divergence**: Measures how different local models are from global
-- **Participation Rate**: Fraction of robots contributing per round
-- **Local Loss/Accuracy**: Per-robot training performance
-
-## 🔬 Extending the Project
-
-### Adding More Robots
-1. Add new service in `docker-compose.yaml`
-2. Or modify `launch/fl_system.launch.py`
-
-### Custom Model
-1. Implement new model in `fl_robots/models/`
-2. Ensure `get_weights()` and `set_weights()` methods
-3. Update `robot_agent.py` to use new model
-
-### Real Sensor Data
-1. Subscribe to actual sensor topics (`/scan`, `/camera/image`)
-2. Implement data preprocessing in `robot_agent.py`
-3. Remove synthetic data generator
-
-### Gazebo Simulation
-1. Add Gazebo plugins to Dockerfile
-2. Create world file and robot URDF
-3. Connect nodes to simulated sensors
 
 ## 📚 References
 
-- [Federated Learning: Strategies for Improving Communication Efficiency](https://arxiv.org/abs/1610.05492)
+- [FedAvg Paper (McMahan et al., 2017)](https://arxiv.org/abs/1610.05492)
 - [ROS2 Humble Documentation](https://docs.ros.org/en/humble/)
+- [ROS2 Lifecycle Nodes](https://design.ros2.org/articles/node_lifecycle.html)
+- [ROS2 Actions](https://docs.ros.org/en/humble/Tutorials/Intermediate/Writing-an-Action-Server-Client/Py.html)
 - [PyTorch Documentation](https://pytorch.org/docs/stable/)
 
 ## 📝 License
 
-MIT License - feel free to use for learning and projects.
+MIT License

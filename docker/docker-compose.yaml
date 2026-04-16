@@ -1,5 +1,5 @@
 services:
-  # Federated Learning Aggregator Node
+  # Federated Learning Aggregator Node (Lifecycle + Services)
   aggregator:
     image: fl-robots:latest
     container_name: fl_aggregator
@@ -15,8 +15,13 @@ services:
     volumes:
       - ../logs:/ros2_ws/logs
       - ../models:/ros2_ws/models
+    healthcheck:
+      test: ["CMD", "bash", "-c", "source /ros2_ws/install/setup.bash && ros2 node list | grep -q aggregator"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
 
-  # Robot Agent 1
+  # Robot Agent 1 (Action Server + Services)
   robot_1:
     image: fl-robots:latest
     container_name: fl_robot_1
@@ -70,7 +75,7 @@ services:
     volumes:
       - ../logs:/ros2_ws/logs
 
-  # Coordinator Node (orchestrates training rounds)
+  # Coordinator Node (State Machine Orchestrator)
   coordinator:
     image: fl-robots:latest
     container_name: fl_coordinator
@@ -91,7 +96,7 @@ services:
       - ../logs:/ros2_ws/logs
       - ../models:/ros2_ws/models
 
-  # Visualization/Monitoring Node
+  # Monitor Node (Metrics Persistence)
   monitor:
     image: fl-robots:latest
     container_name: fl_monitor
@@ -127,7 +132,7 @@ services:
       - ../logs:/ros2_ws/logs
       - ../results:/ros2_ws/results
 
-  # Web Dashboard Node
+  # Web Dashboard Node (MVC + WebSocket)
   web_dashboard:
     image: fl-robots:latest
     container_name: fl_web_dashboard
@@ -137,6 +142,7 @@ services:
     networks:
       - ros_network
     ports:
+      - "5000:5000"
       - "8080:5000"
     depends_on:
       - digital_twin
@@ -146,6 +152,11 @@ services:
     volumes:
       - ../logs:/ros2_ws/logs
       - ../results:/ros2_ws/results
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/api/status"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
 
 networks:
   ros_network:

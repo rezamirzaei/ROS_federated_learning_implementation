@@ -1,0 +1,35 @@
+# TrainRound.action - Execute a local training round with progress feedback
+#
+# This action demonstrates ROS2 action patterns:
+# - Goal: Training parameters for the round
+# - Feedback: Real-time progress during training
+# - Result: Final metrics after training completes
+
+# Goal
+int32 round_number                  # Which FL round to execute
+int32 local_epochs                  # Number of local epochs (0 = use default)
+int32 batch_size                    # Batch size (0 = use default)
+float32 learning_rate               # Learning rate (0.0 = use default)
+---
+# Result
+bool success
+string robot_id
+int32 round_number
+float32 final_loss
+float32 final_accuracy
+int32 total_samples_trained
+float32 training_duration_seconds
+float32[] layer_norms               # L2 norm of each layer's weights
+---
+# Feedback
+string robot_id
+int32 round_number
+int32 current_epoch
+int32 total_epochs
+int32 current_batch
+int32 total_batches
+float32 current_loss
+float32 current_accuracy
+float32 elapsed_seconds
+float32 estimated_remaining_seconds
+

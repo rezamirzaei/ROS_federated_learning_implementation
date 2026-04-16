@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FL Robot Dashboard — ROS2 Federated Learning</title>
+    <link rel="stylesheet" href="/static/css/dashboard.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+</head>
+<body>
+    <header class="header">
+        <h1>🤖 Federated Learning Dashboard</h1>
+        <p class="subtitle"><span class="live-indicator" id="conn-indicator"></span>
+            <span id="conn-status">Connecting…</span> · ROS2 Humble · FedAvg
+        </p>
+    </header>
+
+    <div class="container">
+        <!-- Top row: Status + Metrics + Controls -->
+        <div class="grid grid-3">
+            <!-- System Status -->
+            <div class="card">
+                <h2>📊 System Status</h2>
+                <div class="stat-box"><span class="stat-label">Coordinator State</span>
+                    <span class="stat-value" id="coordinator-state">—</span></div>
+                <div class="stat-box"><span class="stat-label">Current Round</span>
+                    <span class="stat-value" id="current-round">0</span></div>
+                <div class="stat-box"><span class="stat-label">Total Aggregations</span>
+                    <span class="stat-value" id="total-aggregations">0</span></div>
+                <div class="stat-box"><span class="stat-label">Active Robots</span>
+                    <span class="stat-value" id="active-robots">0</span></div>
+                <div class="stat-box"><span class="stat-label">Mean Divergence</span>
+                    <span class="stat-value" id="mean-divergence">—</span></div>
+            </div>
+
+            <!-- Training Metrics -->
+            <div class="card">
+                <h2>📈 Training Metrics</h2>
+                <div class="stat-box"><span class="stat-label">Average Loss</span>
+                    <span class="stat-value" id="avg-loss">—</span></div>
+                <div class="stat-box"><span class="stat-label">Average Accuracy</span>
+                    <span class="stat-value" id="avg-accuracy">—</span></div>
+                <div class="stat-box"><span class="stat-label">Best Accuracy</span>
+                    <span class="stat-value" id="best-accuracy">—</span></div>
+                <div class="stat-box"><span class="stat-label">Training Time</span>
+                    <span class="stat-value" id="training-time">—</span></div>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="accuracy-progress" style="width:0%"></div>
+                </div>
+            </div>
+
+            <!-- Controls -->
+            <div class="card">
+                <h2>🎮 Controls</h2>
+                <div class="controls">
+                    <button class="btn btn-primary" onclick="sendCommand('start_training')">▶️ Start Training</button>
+                    <button class="btn btn-danger"  onclick="sendCommand('stop_training')">⏹️ Stop</button>
+                    <button class="btn btn-secondary" onclick="triggerAggregation()">🔄 Force Aggregate</button>
+                    <button class="btn btn-secondary" onclick="downloadResults()">📥 Download</button>
+                </div>
+                <hr style="border-color:rgba(255,255,255,0.1);margin:15px 0">
+                <h3 style="color:#e94560;font-size:0.95em;margin-bottom:10px">⚙️ Hyperparameters</h3>
+                <div class="param-row">
+                    <label>Learning Rate</label>
+                    <input type="number" id="param-lr" value="0.001" step="0.0001" min="0">
+                </div>
+                <div class="param-row">
+                    <label>Batch Size</label>
+                    <input type="number" id="param-bs" value="32" step="8" min="8">
+                </div>
+                <div class="param-row">
+                    <label>Local Epochs</label>
+                    <input type="number" id="param-epochs" value="5" step="1" min="1">
+                </div>
+                <button class="btn btn-primary btn-sm" onclick="updateHyperparams()" style="margin-top:8px">
+                    Apply to All Robots
+                </button>
+            </div>
+        </div>
+
+        <!-- Charts row -->
+        <div class="grid grid-2">
+            <div class="card">
+                <h2>📉 Loss Over Rounds</h2>
+                <div class="chart-container"><canvas id="lossChart"></canvas></div>
+            </div>
+            <div class="card">
+                <h2>🎯 Accuracy Over Rounds</h2>
+                <div class="chart-container"><canvas id="accChart"></canvas></div>
+            </div>
+        </div>
+
+        <!-- Robots Grid -->
+        <div class="card">
+            <h2>🤖 Robot Agents</h2>
+            <div class="grid grid-3" id="robots-container">
+                <p style="color:#666;">Waiting for robots to connect…</p>
+            </div>
+        </div>
+
+        <!-- Digital Twin + Topology -->
+        <div class="grid grid-2">
+            <div class="card">
+                <h2>🌐 Network Topology</h2>
+                <div class="topology-container">
+                    <canvas id="topologyCanvas" width="500" height="400"></canvas>
+                </div>
+            </div>
+            <div class="card">
+                <h2>🔬 Digital Twin</h2>
+                <div class="digital-twin-container">
+                    <img id="digital-twin-img" src="/api/digital-twin" alt="Digital Twin"
+                         onerror="this.style.display='none';document.getElementById('twin-error').style.display='block';">
+                    <p id="twin-error" style="display:none;color:#666;">Digital twin image not yet available</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Event Log -->
+        <div class="card">
+            <h2>📋 Event Log</h2>
+            <div class="log-container" id="event-log">
+                <div class="log-entry"><span class="log-time">--:--:--</span>Waiting for events…</div>
+            </div>
+        </div>
+    </div>
+
+    <footer class="footer">
+        ROS2 Federated Learning System · Lifecycle Node · Custom Interfaces · Actions · Services
+    </footer>
+
+    <script src="/static/js/dashboard.js"></script>
+</body>
+</html>
+

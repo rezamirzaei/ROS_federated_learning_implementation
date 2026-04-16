@@ -1,0 +1,16 @@
+# UpdateHyperparameters.srv - Dynamically update training hyperparameters
+# Request
+string robot_id                     # Target robot (empty = all robots)
+float32 learning_rate               # New learning rate (0 = no change)
+int32 batch_size                    # New batch size (0 = no change)
+int32 local_epochs                  # New local epochs (0 = no change)
+int32 samples_per_round             # New samples per round (0 = no change)
+---
+# Response
+bool success
+string message
+string robot_id
+float32 learning_rate
+int32 batch_size
+int32 local_epochs
+
