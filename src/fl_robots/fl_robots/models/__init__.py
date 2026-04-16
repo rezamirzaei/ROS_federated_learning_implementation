@@ -1,15 +1,15 @@
 """Models package for federated learning."""
 
 from .simple_nn import (
-    SimpleNavigationNet,
     ObstacleAvoidanceNet,
+    SimpleNavigationNet,
+    compute_gradient_divergence,
     federated_averaging,
-    compute_gradient_divergence
 )
 
 __all__ = [
-    'SimpleNavigationNet',
-    'ObstacleAvoidanceNet',
-    'federated_averaging',
-    'compute_gradient_divergence'
+    "ObstacleAvoidanceNet",
+    "SimpleNavigationNet",
+    "compute_gradient_divergence",
+    "federated_averaging",
 ]

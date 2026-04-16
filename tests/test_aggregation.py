@@ -9,15 +9,13 @@ Tests cover:
 - Data generation
 """
 
-import pytest
 import numpy as np
+import pytest
 import torch
-
 from fl_robots.models.simple_nn import (
     SimpleNavigationNet,
-    ObstacleAvoidanceNet,
+    compute_gradient_divergence,
     federated_averaging,
-    compute_gradient_divergence
 )
 
 
@@ -117,44 +115,44 @@ class TestFederatedAveraging:
     def test_equal_weights_averaging(self):
         """Test averaging with equal weights."""
         # Create simple weight dictionaries
-        weights1 = {'layer1': np.array([1.0, 2.0, 3.0])}
-        weights2 = {'layer1': np.array([3.0, 4.0, 5.0])}
+        weights1 = {"layer1": np.array([1.0, 2.0, 3.0])}
+        weights2 = {"layer1": np.array([3.0, 4.0, 5.0])}
 
         averaged = federated_averaging([weights1, weights2])
 
         expected = np.array([2.0, 3.0, 4.0])
-        np.testing.assert_array_almost_equal(averaged['layer1'], expected)
+        np.testing.assert_array_almost_equal(averaged["layer1"], expected)
 
     def test_weighted_averaging(self):
         """Test averaging with different sample counts."""
-        weights1 = {'layer1': np.array([1.0, 2.0])}
-        weights2 = {'layer1': np.array([5.0, 6.0])}
+        weights1 = {"layer1": np.array([1.0, 2.0])}
+        weights2 = {"layer1": np.array([5.0, 6.0])}
 
         # weights1 has 3x more samples
         averaged = federated_averaging([weights1, weights2], sample_counts=[300, 100])
 
         # Expected: (1*0.75 + 5*0.25, 2*0.75 + 6*0.25) = (2.0, 3.0)
         expected = np.array([2.0, 3.0])
-        np.testing.assert_array_almost_equal(averaged['layer1'], expected)
+        np.testing.assert_array_almost_equal(averaged["layer1"], expected)
 
     def test_multi_layer_averaging(self):
         """Test averaging with multiple layers."""
         weights1 = {
-            'fc1.weight': np.ones((4, 3)),
-            'fc1.bias': np.zeros(4),
-            'fc2.weight': np.ones((2, 4)) * 2,
+            "fc1.weight": np.ones((4, 3)),
+            "fc1.bias": np.zeros(4),
+            "fc2.weight": np.ones((2, 4)) * 2,
         }
         weights2 = {
-            'fc1.weight': np.ones((4, 3)) * 3,
-            'fc1.bias': np.ones(4) * 2,
-            'fc2.weight': np.ones((2, 4)) * 4,
+            "fc1.weight": np.ones((4, 3)) * 3,
+            "fc1.bias": np.ones(4) * 2,
+            "fc2.weight": np.ones((2, 4)) * 4,
         }
 
         averaged = federated_averaging([weights1, weights2])
 
-        np.testing.assert_array_almost_equal(averaged['fc1.weight'], np.ones((4, 3)) * 2)
-        np.testing.assert_array_almost_equal(averaged['fc1.bias'], np.ones(4))
-        np.testing.assert_array_almost_equal(averaged['fc2.weight'], np.ones((2, 4)) * 3)
+        np.testing.assert_array_almost_equal(averaged["fc1.weight"], np.ones((4, 3)) * 2)
+        np.testing.assert_array_almost_equal(averaged["fc1.bias"], np.ones(4))
+        np.testing.assert_array_almost_equal(averaged["fc2.weight"], np.ones((2, 4)) * 3)
 
     def test_empty_list_raises_error(self):
         """Test that empty list raises error."""
@@ -163,11 +161,11 @@ class TestFederatedAveraging:
 
     def test_single_client(self):
         """Test averaging with single client returns same weights."""
-        weights = {'layer1': np.array([1.0, 2.0, 3.0])}
+        weights = {"layer1": np.array([1.0, 2.0, 3.0])}
 
         averaged = federated_averaging([weights])
 
-        np.testing.assert_array_equal(averaged['layer1'], weights['layer1'])
+        np.testing.assert_array_equal(averaged["layer1"], weights["layer1"])
 
 
 class TestGradientDivergence:
@@ -175,10 +173,10 @@ class TestGradientDivergence:
 
     def test_zero_divergence_same_weights(self):
         """Test divergence is zero when weights match global."""
-        global_weights = {'layer1': np.array([1.0, 2.0, 3.0])}
+        global_weights = {"layer1": np.array([1.0, 2.0, 3.0])}
         local_weights = [
-            {'layer1': np.array([1.0, 2.0, 3.0])},
-            {'layer1': np.array([1.0, 2.0, 3.0])},
+            {"layer1": np.array([1.0, 2.0, 3.0])},
+            {"layer1": np.array([1.0, 2.0, 3.0])},
         ]
 
         divergences = compute_gradient_divergence(local_weights, global_weights)
@@ -188,10 +186,10 @@ class TestGradientDivergence:
 
     def test_positive_divergence(self):
         """Test divergence is positive when weights differ."""
-        global_weights = {'layer1': np.array([0.0, 0.0, 0.0])}
+        global_weights = {"layer1": np.array([0.0, 0.0, 0.0])}
         local_weights = [
-            {'layer1': np.array([1.0, 0.0, 0.0])},  # L2 = 1.0
-            {'layer1': np.array([0.0, 3.0, 4.0])},  # L2 = 5.0
+            {"layer1": np.array([1.0, 0.0, 0.0])},  # L2 = 1.0
+            {"layer1": np.array([0.0, 3.0, 4.0])},  # L2 = 5.0
         ]
 
         divergences = compute_gradient_divergence(local_weights, global_weights)
@@ -207,10 +205,7 @@ class TestModelIntegration:
     def test_full_federated_round(self):
         """Test a complete federated learning round."""
         # Create 3 models
-        models = [
-            SimpleNavigationNet(input_dim=12, hidden_dim=32, output_dim=4)
-            for _ in range(3)
-        ]
+        models = [SimpleNavigationNet(input_dim=12, hidden_dim=32, output_dim=4) for _ in range(3)]
 
         # Simulate local training (just modify weights randomly)
         for model in models:
@@ -270,5 +265,5 @@ class TestModelIntegration:
         assert all(d > 0 for d in divergence_history)
 
 
-if __name__ == '__main__':
-    pytest.main([__file__, '-v'])
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])

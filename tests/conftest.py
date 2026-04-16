@@ -1,1 +1,22 @@
 """Pytest configuration for repository tests."""
+
+from __future__ import annotations
+
+from collections.abc import Iterator
+
+import pytest
+from fl_robots.testing.fake_ros import FakeROSEnvironment
+
+
+@pytest.fixture
+def fake_ros() -> Iterator[FakeROSEnvironment]:
+    """Install functional ROS fakes for the duration of a test.
+
+    Any module that imports from :mod:`fl_robots.ros_compat` will see
+    functional (non-raising) stand-ins for ``Node``, ``rclpy``, executors,
+    and action servers. The fixture yields the environment so tests can
+    drive subscribers, inspect publications, and fire timers directly.
+    """
+    with FakeROSEnvironment() as env:
+        yield env
+

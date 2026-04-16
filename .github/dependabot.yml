@@ -1,0 +1,51 @@
+# Dependabot v2 configuration — keeps runtime, tooling, and container
+# dependencies current without drowning the PR queue in noise.
+#
+# Strategy:
+# - Group compatible version ranges so semver-minor bumps ship in one PR.
+# - Python uv packages: weekly.
+# - GitHub Actions: weekly.
+# - Docker base images: weekly.
+#
+# Contributors: if a bump breaks CI, pin or revert — don't disable the
+# ecosystem entry (that hides future CVEs).
+
+version: 2
+updates:
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    groups:
+      ml-stack:
+        patterns:
+          - "torch*"
+          - "numpy"
+          - "scikit-learn"
+      web-stack:
+        patterns:
+          - "flask*"
+          - "pydantic*"
+          - "eventlet"
+      dev-tools:
+        patterns:
+          - "pytest*"
+          - "ruff"
+          - "mypy"
+          - "black"
+          - "hypothesis"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 3
+
+  - package-ecosystem: "docker"
+    directory: "/docker"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 2
+

@@ -27,17 +27,22 @@ from collections import deque
 from pathlib import Path
 from typing import Any
 
-import rclpy
-from rclpy.node import Node
-from rclpy.callback_groups import ReentrantCallbackGroup
-from rclpy.executors import MultiThreadedExecutor
-from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
-
-from std_msgs.msg import String
+from .ros_compat import (
+    DurabilityPolicy,
+    HistoryPolicy,
+    MultiThreadedExecutor,
+    Node,
+    QoSProfile,
+    ReentrantCallbackGroup,
+    ReliabilityPolicy,
+    String,
+    rclpy,
+)
 
 try:
-    from flask import Flask, render_template, jsonify, request, send_file, send_from_directory
+    from flask import Flask, jsonify, render_template, request, send_file, send_from_directory
     from flask_cors import CORS
+
     FLASK_AVAILABLE = True
 except ImportError:
     FLASK_AVAILABLE = False
@@ -45,13 +50,15 @@ except ImportError:
 
 try:
     from flask_socketio import SocketIO, emit
+
     SOCKETIO_AVAILABLE = True
 except ImportError:
     SOCKETIO_AVAILABLE = False
 
 # Try importing custom service interfaces for service client integration
 try:
-    from fl_robots_interfaces.srv import TriggerAggregation, UpdateHyperparameters, GetModelInfo
+    from fl_robots_interfaces.srv import GetModelInfo, TriggerAggregation, UpdateHyperparameters
+
     CUSTOM_INTERFACES = True
 except ImportError:
     CUSTOM_INTERFACES = False
@@ -67,58 +74,69 @@ class WebDashboardNode(Node):
     """
 
     def __init__(self):
-        super().__init__('web_dashboard')
+        super().__init__("web_dashboard")
 
         self.cb_group = ReentrantCallbackGroup()
         self.cb_group_clients = ReentrantCallbackGroup()
 
         # Parameters
-        self.declare_parameter('port', 5000)
-        self.declare_parameter('host', '0.0.0.0')
-        self.declare_parameter('output_dir', '/ros2_ws/results')
+        self.declare_parameter("port", 5000)
+        self.declare_parameter("host", "0.0.0.0")
+        self.declare_parameter("output_dir", "/ros2_ws/results")
 
-        self.port = self.get_parameter('port').value
-        self.host = self.get_parameter('host').value
-        self.output_dir = self.get_parameter('output_dir').value
+        self.port = self.get_parameter("port").value
+        self.host = self.get_parameter("host").value
+        self.output_dir = self.get_parameter("output_dir").value
 
-        self.get_logger().info(f'Initializing Web Dashboard on {self.host}:{self.port}')
+        self.get_logger().info(f"Initializing Web Dashboard on {self.host}:{self.port}")
 
         # ── Model: State storage ────────────────────────────────────
         self.state_lock = threading.Lock()
-        self.robots: dict[str, Dict] = {}
+        self.robots: dict[str, dict] = {}
         self.coordinator_state = "IDLE"
         self.current_round = 0
         self.total_aggregations = 0
         self.mean_divergence = 0.0
         self.start_time = time.time()
         self.event_log: deque = deque(maxlen=200)
-        self.loss_history: list[Dict] = []
-        self.acc_history: list[Dict] = []
+        self.loss_history: list[dict] = []
+        self.acc_history: list[dict] = []
 
         # QoS
         qos_reliable = QoSProfile(
             reliability=ReliabilityPolicy.RELIABLE,
             history=HistoryPolicy.KEEP_LAST,
             depth=10,
-            durability=DurabilityPolicy.TRANSIENT_LOCAL
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
         )
 
         # ── Subscribers ─────────────────────────────────────────────
         self.robot_status_sub = self.create_subscription(
-            String, '/fl/robot_status', self.robot_status_callback,
-            qos_reliable, callback_group=self.cb_group)
+            String,
+            "/fl/robot_status",
+            self.robot_status_callback,
+            qos_reliable,
+            callback_group=self.cb_group,
+        )
 
         self.aggregation_sub = self.create_subscription(
-            String, '/fl/aggregation_metrics', self.aggregation_callback,
-            qos_reliable, callback_group=self.cb_group)
+            String,
+            "/fl/aggregation_metrics",
+            self.aggregation_callback,
+            qos_reliable,
+            callback_group=self.cb_group,
+        )
 
         self.coordinator_sub = self.create_subscription(
-            String, '/fl/coordinator_status', self.coordinator_callback,
-            qos_reliable, callback_group=self.cb_group)
+            String,
+            "/fl/coordinator_status",
+            self.coordinator_callback,
+            qos_reliable,
+            callback_group=self.cb_group,
+        )
 
         # ── Publisher for commands ──────────────────────────────────
-        self.command_publisher = self.create_publisher(
-            String, '/fl/training_command', qos_reliable)
+        self.command_publisher = self.create_publisher(String, "/fl/training_command", qos_reliable)
 
         # ── Service Clients (for interactive control) ───────────────
         self.trigger_agg_client = None
@@ -126,9 +144,9 @@ class WebDashboardNode(Node):
 
         if CUSTOM_INTERFACES:
             self.trigger_agg_client = self.create_client(
-                TriggerAggregation, '/fl/trigger_aggregation',
-                callback_group=self.cb_group_clients)
-            self.get_logger().info('Service client: /fl/trigger_aggregation')
+                TriggerAggregation, "/fl/trigger_aggregation", callback_group=self.cb_group_clients
+            )
+            self.get_logger().info("Service client: /fl/trigger_aggregation")
 
         # Socket.IO reference (set in _run_flask)
         self.socketio = None
@@ -138,15 +156,16 @@ class WebDashboardNode(Node):
             self.flask_thread = threading.Thread(target=self._run_flask, daemon=True)
             self.flask_thread.start()
         else:
-            self.get_logger().error('Flask not available, web dashboard disabled')
+            self.get_logger().error("Flask not available, web dashboard disabled")
 
         # Timer to push updates via WebSocket
-        self.push_timer = self.create_timer(
-            1.5, self._push_ws_update, callback_group=self.cb_group)
+        self.push_timer = self.create_timer(1.5, self._push_ws_update, callback_group=self.cb_group)
 
-        self.get_logger().info(f'Web Dashboard: http://{self.host}:{self.port}')
-        self.get_logger().info(f'WebSocket: {"ENABLED" if SOCKETIO_AVAILABLE else "DISABLED (polling fallback)"}')
-        self.get_logger().info(f'Service clients: {"ENABLED" if CUSTOM_INTERFACES else "DISABLED"}')
+        self.get_logger().info(f"Web Dashboard: http://{self.host}:{self.port}")
+        self.get_logger().info(
+            f"WebSocket: {'ENABLED' if SOCKETIO_AVAILABLE else 'DISABLED (polling fallback)'}"
+        )
+        self.get_logger().info(f"Service clients: {'ENABLED' if CUSTOM_INTERFACES else 'DISABLED'}")
 
     # ────────────────────────────────────────────────────────────────
     # Model: ROS2 Callbacks
@@ -155,64 +174,68 @@ class WebDashboardNode(Node):
     def robot_status_callback(self, msg: String):
         try:
             data = json.loads(msg.data)
-            robot_id = data.get('robot_id')
+            robot_id = data.get("robot_id")
             if not robot_id:
                 return
 
             with self.state_lock:
                 if robot_id not in self.robots:
                     self.robots[robot_id] = {}
-                    self._add_event(f'Robot {robot_id} connected')
+                    self._add_event(f"Robot {robot_id} connected")
 
-                self.robots[robot_id].update({
-                    'is_training': data.get('is_training', False),
-                    'loss': data.get('last_loss'),
-                    'accuracy': data.get('last_accuracy'),
-                    'rounds': data.get('training_round', 0),
-                    'last_seen': time.time()
-                })
+                self.robots[robot_id].update(
+                    {
+                        "is_training": data.get("is_training", False),
+                        "loss": data.get("last_loss"),
+                        "accuracy": data.get("last_accuracy"),
+                        "rounds": data.get("training_round", 0),
+                        "last_seen": time.time(),
+                    }
+                )
         except Exception as e:
-            self.get_logger().error(f'Error in robot status callback: {e}')
+            self.get_logger().error(f"Error in robot status callback: {e}")
 
     def aggregation_callback(self, msg: String):
         try:
             data = json.loads(msg.data)
             with self.state_lock:
-                self.total_aggregations = data.get('round', self.total_aggregations)
-                self.mean_divergence = data.get('mean_divergence', 0.0)
-                self._add_event(f'Aggregation round {self.total_aggregations} complete')
+                self.total_aggregations = data.get("round", self.total_aggregations)
+                self.mean_divergence = data.get("mean_divergence", 0.0)
+                self._add_event(f"Aggregation round {self.total_aggregations} complete")
 
                 # Record history for charts
                 snapshot_loss = {}
                 snapshot_acc = {}
                 for rid, r in self.robots.items():
-                    snapshot_loss[rid] = {'loss': r.get('loss')}
-                    snapshot_acc[rid] = {'accuracy': r.get('accuracy')}
-                self.loss_history.append({'round': self.total_aggregations, 'robots': snapshot_loss})
-                self.acc_history.append({'round': self.total_aggregations, 'robots': snapshot_acc})
+                    snapshot_loss[rid] = {"loss": r.get("loss")}
+                    snapshot_acc[rid] = {"accuracy": r.get("accuracy")}
+                self.loss_history.append(
+                    {"round": self.total_aggregations, "robots": snapshot_loss}
+                )
+                self.acc_history.append({"round": self.total_aggregations, "robots": snapshot_acc})
         except Exception as e:
-            self.get_logger().error(f'Error in aggregation callback: {e}')
+            self.get_logger().error(f"Error in aggregation callback: {e}")
 
     def coordinator_callback(self, msg: String):
         try:
             data = json.loads(msg.data)
             with self.state_lock:
                 old_state = self.coordinator_state
-                self.coordinator_state = data.get('state', 'UNKNOWN')
-                self.current_round = data.get('current_round', 0)
+                self.coordinator_state = data.get("state", "UNKNOWN")
+                self.current_round = data.get("current_round", 0)
                 if old_state != self.coordinator_state:
-                    self._add_event(f'Coordinator: {self.coordinator_state}')
+                    self._add_event(f"Coordinator: {self.coordinator_state}")
         except Exception as e:
-            self.get_logger().error(f'Error in coordinator callback: {e}')
+            self.get_logger().error(f"Error in coordinator callback: {e}")
 
     def _add_event(self, message: str):
-        self.event_log.append({'time': time.strftime('%H:%M:%S'), 'message': message})
+        self.event_log.append({"time": time.strftime("%H:%M:%S"), "message": message})
 
     def _push_ws_update(self):
         """Timer callback: push state to all WebSocket clients."""
         if self.socketio:
             try:
-                self.socketio.emit('status_update', self._get_status(), namespace='/')
+                self.socketio.emit("status_update", self._get_status(), namespace="/")
             except Exception:
                 pass
 
@@ -220,7 +243,7 @@ class WebDashboardNode(Node):
     # Model: State Retrieval
     # ────────────────────────────────────────────────────────────────
 
-    def _get_status(self) -> Dict:
+    def _get_status(self) -> dict:
         with self.state_lock:
             robots_data = {}
             total_loss = 0
@@ -230,27 +253,27 @@ class WebDashboardNode(Node):
 
             for rid, robot in self.robots.items():
                 robots_data[rid] = robot.copy()
-                if robot.get('loss') is not None:
-                    total_loss += robot['loss']
+                if robot.get("loss") is not None:
+                    total_loss += robot["loss"]
                     count += 1
-                if robot.get('accuracy') is not None:
-                    total_acc += robot['accuracy']
-                    best_acc = max(best_acc, robot['accuracy'])
+                if robot.get("accuracy") is not None:
+                    total_acc += robot["accuracy"]
+                    best_acc = max(best_acc, robot["accuracy"])
 
             return {
-                'coordinator_state': self.coordinator_state,
-                'current_round': self.current_round,
-                'total_aggregations': self.total_aggregations,
-                'active_robots': len(self.robots),
-                'mean_divergence': self.mean_divergence,
-                'avg_loss': total_loss / count if count > 0 else None,
-                'avg_accuracy': total_acc / count if count > 0 else None,
-                'best_accuracy': best_acc if best_acc > 0 else None,
-                'training_time': time.time() - self.start_time,
-                'robots': robots_data,
-                'events': list(self.event_log),
-                'loss_history': self.loss_history[-50:],
-                'acc_history': self.acc_history[-50:],
+                "coordinator_state": self.coordinator_state,
+                "current_round": self.current_round,
+                "total_aggregations": self.total_aggregations,
+                "active_robots": len(self.robots),
+                "mean_divergence": self.mean_divergence,
+                "avg_loss": total_loss / count if count > 0 else None,
+                "avg_accuracy": total_acc / count if count > 0 else None,
+                "best_accuracy": best_acc if best_acc > 0 else None,
+                "training_time": time.time() - self.start_time,
+                "robots": robots_data,
+                "events": list(self.event_log),
+                "loss_history": self.loss_history[-50:],
+                "acc_history": self.acc_history[-50:],
             }
 
     # ────────────────────────────────────────────────────────────────
@@ -259,36 +282,38 @@ class WebDashboardNode(Node):
 
     def _send_command(self, command: str):
         msg = String()
-        msg.data = json.dumps({
-            'command': command,
-            'round': self.current_round,
-            'timestamp': time.time()
-        })
+        msg.data = json.dumps(
+            {"command": command, "round": self.current_round, "timestamp": time.time()}
+        )
         self.command_publisher.publish(msg)
-        self._add_event(f'Sent command: {command}')
+        self._add_event(f"Sent command: {command}")
 
-    def _call_trigger_aggregation(self) -> Dict:
+    def _call_trigger_aggregation(self) -> dict:
         """Call TriggerAggregation service."""
-        if not self.trigger_agg_client or not self.trigger_agg_client.wait_for_service(timeout_sec=1.0):
-            return {'success': False, 'message': 'Service not available'}
+        if not self.trigger_agg_client or not self.trigger_agg_client.wait_for_service(
+            timeout_sec=1.0
+        ):
+            return {"success": False, "message": "Service not available"}
 
         req = TriggerAggregation.Request()
         req.force = True
         req.min_participants = 0
-        future = self.trigger_agg_client.call_async(req)
+        # Fire-and-forget; attach done_callback in production to surface
+        # the result back to the client.
+        self.trigger_agg_client.call_async(req)
         # Non-blocking: return pending
-        return {'success': True, 'message': 'Aggregation triggered (async)'}
+        return {"success": True, "message": "Aggregation triggered (async)"}
 
     def _create_hp_client(self, robot_id: str):
         """Lazily create a service client for updating a robot's hyperparameters."""
         if robot_id not in self.update_hp_clients and CUSTOM_INTERFACES:
             self.update_hp_clients[robot_id] = self.create_client(
                 UpdateHyperparameters,
-                f'/fl/{robot_id}/update_hyperparameters',
-                callback_group=self.cb_group_clients
+                f"/fl/{robot_id}/update_hyperparameters",
+                callback_group=self.cb_group_clients,
             )
 
-    def _call_update_hyperparameters(self, lr: float, bs: int, epochs: int) -> Dict:
+    def _call_update_hyperparameters(self, lr: float, bs: int, epochs: int) -> dict:
         """Update hyperparameters on all known robots via services."""
         results = []
         for rid in list(self.robots.keys()):
@@ -305,8 +330,8 @@ class WebDashboardNode(Node):
                 results.append(rid)
 
         if results:
-            return {'success': True, 'message': f'Updated {len(results)} robots: {results}'}
-        return {'success': False, 'message': 'No robots available or service not ready'}
+            return {"success": True, "message": f"Updated {len(results)} robots: {results}"}
+        return {"success": False, "message": "No robots available or service not ready"}
 
     # ────────────────────────────────────────────────────────────────
     # View: Flask + Socket.IO Server
@@ -315,109 +340,117 @@ class WebDashboardNode(Node):
     def _run_flask(self):
         """Run Flask web server with optional Socket.IO."""
         # Resolve template and static directories
-        web_dir = Path(__file__).parent / 'web'
-        template_dir = web_dir / 'templates'
-        static_dir = web_dir / 'static'
+        web_dir = Path(__file__).parent / "web"
+        template_dir = web_dir / "templates"
+        static_dir = web_dir / "static"
 
-        app = Flask(__name__,
-                    template_folder=str(template_dir),
-                    static_folder=str(static_dir))
+        app = Flask(__name__, template_folder=str(template_dir), static_folder=str(static_dir))
         CORS(app)
 
         node = self
 
         # Initialize Socket.IO if available
         if SOCKETIO_AVAILABLE:
-            socketio = SocketIO(app, cors_allowed_origins='*', async_mode='threading')
+            socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
             node.socketio = socketio
         else:
             socketio = None
 
         # ── Routes (View + Controller) ──────────────────────────────
 
-        @app.route('/')
+        @app.route("/")
         def index():
-            return render_template('dashboard.html')
+            return render_template("dashboard.html")
 
-        @app.route('/api/status')
+        @app.route("/api/status")
         def get_status():
             return jsonify(node._get_status())
 
-        @app.route('/api/command', methods=['POST'])
+        @app.route("/api/command", methods=["POST"])
         def send_command():
             data = request.get_json(silent=True) or {}
-            cmd = data.get('command')
+            cmd = data.get("command")
             if not cmd or not isinstance(cmd, str):
-                return jsonify({'success': False, 'error': 'No command specified'}), 400
+                return jsonify({"success": False, "error": "No command specified"}), 400
 
             _VALID_COMMANDS = {
-                'start_training', 'stop_training', 'publish_weights',
+                "start_training",
+                "stop_training",
+                "publish_weights",
             }
             if cmd not in _VALID_COMMANDS:
-                return jsonify({'success': False, 'error': f'Unknown command: {cmd}'}), 400
+                return jsonify({"success": False, "error": f"Unknown command: {cmd}"}), 400
 
             node._send_command(cmd)
-            return jsonify({'success': True, 'command': cmd})
+            return jsonify({"success": True, "command": cmd})
 
-        @app.route('/api/trigger-aggregation', methods=['POST'])
+        @app.route("/api/trigger-aggregation", methods=["POST"])
         def trigger_aggregation():
             if CUSTOM_INTERFACES:
                 result = node._call_trigger_aggregation()
                 return jsonify(result)
             else:
                 # Fallback: publish command
-                node._send_command('publish_weights')
-                return jsonify({'success': True, 'message': 'Published weights request'})
+                node._send_command("publish_weights")
+                return jsonify({"success": True, "message": "Published weights request"})
 
-        @app.route('/api/update-hyperparameters', methods=['POST'])
+        @app.route("/api/update-hyperparameters", methods=["POST"])
         def update_hyperparameters():
             data = request.get_json()
-            lr = float(data.get('learning_rate', 0))
-            bs = int(data.get('batch_size', 0))
-            ep = int(data.get('local_epochs', 0))
+            lr = float(data.get("learning_rate", 0))
+            bs = int(data.get("batch_size", 0))
+            ep = int(data.get("local_epochs", 0))
 
             if CUSTOM_INTERFACES:
                 result = node._call_update_hyperparameters(lr, bs, ep)
                 return jsonify(result)
             else:
-                return jsonify({'success': False, 'message': 'Custom interfaces not available'})
+                return jsonify({"success": False, "message": "Custom interfaces not available"})
 
-        @app.route('/api/digital-twin')
+        @app.route("/api/digital-twin")
         def get_digital_twin():
-            twin_path = os.path.join(node.output_dir, 'digital_twin.png')
+            twin_path = os.path.join(node.output_dir, "digital_twin.png")
             if os.path.exists(twin_path):
-                return send_file(twin_path, mimetype='image/png')
-            return '', 404
+                return send_file(twin_path, mimetype="image/png")
+            return "", 404
 
-        @app.route('/api/download-results')
+        @app.route("/api/download-results")
         def download_results():
-            import zipfile
             import io
+            import zipfile
 
             memory_file = io.BytesIO()
-            with zipfile.ZipFile(memory_file, 'w', zipfile.ZIP_DEFLATED) as zf:
-                for filename in ['aggregation_history.csv', 'robot_metrics.json',
-                                'training_summary.json', 'digital_twin.png',
-                                'aggregation_history.json']:
+            with zipfile.ZipFile(memory_file, "w", zipfile.ZIP_DEFLATED) as zf:
+                for filename in [
+                    "aggregation_history.csv",
+                    "robot_metrics.json",
+                    "training_summary.json",
+                    "digital_twin.png",
+                    "aggregation_history.json",
+                ]:
                     filepath = os.path.join(node.output_dir, filename)
                     if os.path.exists(filepath):
                         zf.write(filepath, filename)
             memory_file.seek(0)
-            return send_file(memory_file, mimetype='application/zip',
-                           as_attachment=True, download_name='fl_results.zip')
+            return send_file(
+                memory_file,
+                mimetype="application/zip",
+                as_attachment=True,
+                download_name="fl_results.zip",
+            )
 
-        @app.route('/api/robots')
+        @app.route("/api/robots")
         def get_robots():
             with node.state_lock:
                 return jsonify(list(node.robots.keys()))
 
         # ── Start server ────────────────────────────────────────────
         if socketio:
-            socketio.run(app, host=node.host, port=node.port,
-                        allow_unsafe_werkzeug=True, use_reloader=False)
+            socketio.run(
+                app, host=node.host, port=node.port, allow_unsafe_werkzeug=True, use_reloader=False
+            )
         else:
-            app.run(host=node.host, port=node.port,
-                   threaded=True, use_reloader=False)
+            app.run(host=node.host, port=node.port, threaded=True, use_reloader=False)
 
 
 def main(args=None):
@@ -437,5 +470,5 @@ def main(args=None):
         rclpy.shutdown()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

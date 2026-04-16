@@ -27,11 +27,16 @@ services:
     ports:
       - "5000:5000"
     restart: unless-stopped
+    stop_grace_period: 10s
     healthcheck:
-      test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://127.0.0.1:5000/api/health').read()"]
+      # Prefer /api/ready so that Kubernetes/Compose only routes traffic to
+      # the container once the simulation thread is stepping. Liveness
+      # stays on /api/health so a stalled sim doesn't get CrashLooped.
+      test: ["CMD", "python", "-c", "from urllib.request import urlopen; import sys; sys.exit(0 if urlopen('http://127.0.0.1:5000/api/ready', timeout=2).status == 200 else 1)"]
       interval: 10s
       timeout: 3s
-      retries: 3
+      retries: 5
+      start_period: 20s
 
   test_runner:
     image: fl-robots-test:latest

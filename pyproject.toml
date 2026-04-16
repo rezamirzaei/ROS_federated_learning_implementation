@@ -23,35 +23,56 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Robotics",
 ]
 
+# Minimal runtime required for the standalone Flask dashboard and simulation.
+# Heavier ML / ROS-dashboard deps live in the `ml` / `ros` extras so the
+# lightweight Docker image stays small.
 dependencies = [
     "pydantic>=2.0.0",
-    "torch>=2.0.0,<=2.2.2",
-    "numpy>=1.24.0,<2.0",
-    "scipy>=1.10.0",
-    "scikit-learn>=1.3.0",
     "flask>=3.0.0",
-    "flask-cors>=4.0.0",
-    "flask-socketio>=5.3.0",
-    "python-socketio>=5.0.0",
     "jinja2>=3.1.0",
-    "eventlet>=0.33.0",
-    "matplotlib>=3.7.0",
+    "prometheus-client>=0.20.0",
+    "structlog>=24.1.0",
 ]
 
 [project.scripts]
 fl-robots = "fl_robots.cli:main"
+fl-robots-benchmark = "fl_robots.scripts.benchmark:main"
 
 [project.optional-dependencies]
-dev = [
-    "pytest>=7.4.0",
-    "pytest-cov>=4.1.0",
-    "black>=23.0.0",
-    "flake8>=6.1.0",
-    "mypy>=1.5.0",
+# Federated learning stack — needed for robot_agent / aggregator / tests.
+ml = [
+    "torch>=2.0.0,<=2.2.2",
+    "torchvision>=0.15.0,<=0.17.2",
+    "numpy>=1.24.0,<2.0",
+    "scipy>=1.10.0",
+    "scikit-learn>=1.3.0",
 ]
+# Optional QP-based MPC solver.
+qp = [
+    "osqp>=0.6.5",
+    "scipy>=1.10.0",
+    "numpy>=1.24.0,<2.0",
+]
+# Full ROS2 web dashboard (Socket.IO + CORS + plotting).
+ros = [
+    "flask-cors>=4.0.0",
+    "flask-socketio>=5.3.0",
+    "python-socketio>=5.0.0",
+    "eventlet>=0.33.0",
+    "matplotlib>=3.7.0",
+]
+# Offline visualization / reporting helpers.
 viz = [
     "matplotlib>=3.7.0",
     "pandas>=2.0.0",
+]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-cov>=4.1.0",
+    "hypothesis>=6.100.0",
+    "ruff>=0.7.0",
+    "mypy>=1.10.0",
+    "types-requests",
 ]
 
 [project.urls]
@@ -65,10 +86,82 @@ python_functions = ["test_*"]
 addopts = "-v --tb=short"
 pythonpath = ["src/fl_robots"]
 
+[tool.coverage.run]
+source = ["fl_robots"]
+omit = [
+    # Web dashboard ships with the --extra ros profile; it requires
+    # flask-socketio/eventlet which we don't install in the core CI matrix.
+    "src/fl_robots/fl_robots/web_dashboard.py",
+    # Module-level ROS benchmark script is exercised separately when the
+    # full ROS2 toolchain is available; excluded from the core coverage gate.
+    "src/fl_robots/fl_robots/scripts/benchmark.py",
+    # Test-only support code.
+    "src/fl_robots/fl_robots/testing/*",
+]
+
+[tool.coverage.report]
+exclude_also = [
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "def __repr__",
+    "pragma: no cover",
+]
+show_missing = true
+skip_covered = false
+# Minimum total coverage enforced in CI; ratchet up as we add tests.
+fail_under = 60
+
 [tool.black]
 line-length = 100
 target-version = ['py310']
 include = '\.pyi?$'
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+extend-exclude = ["src/fl_robots/fl_robots.egg-info", "src/fl_robots_interfaces", "dist", ".venv"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "UP",  # pyupgrade
+    "C4",  # flake8-comprehensions
+    "SIM", # flake8-simplify
+    "RUF", # ruff-specific
+]
+ignore = [
+    "E501",   # line-too-long (black/ruff-format handles it)
+    "E741",   # Ambiguous variable name (math conventions, e.g. `l`)
+    "B007",   # unused loop var (numeric loops use _ idiom inconsistently)
+    "B008",   # function calls in defaults (FastAPI/Pydantic pattern)
+    "B017",   # pytest.raises(Exception) is fine in property tests
+    "B905",   # zip-without-strict (target-version supports it, but we prefer compat)
+    "SIM102", # collapsible-if is less readable for nested checks
+    "SIM105", # contextlib.suppress adds indentation — keep try/except
+    "SIM108", # ternary preference
+    "SIM117", # nested-with (combined context managers are busy)
+    "SIM118", # dict.keys() is fine when explicit
+    "UP007",  # keep Optional[X] (broader reader familiarity)
+    "RUF001", "RUF002", "RUF003",  # intentional unicode in docstrings / comments
+    "RUF005",
+    "RUF013",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["B011", "SIM117", "F401", "F841"]
+"src/fl_robots/fl_robots/ros_compat.py" = ["F401"]  # re-exports
+"src/fl_robots/fl_robots/aggregator.py" = ["F401"]  # ROS/interface fallback imports
+"src/fl_robots/fl_robots/robot_agent.py" = ["F401"]
+"src/fl_robots/fl_robots/web_dashboard.py" = ["F401"]
+"src/fl_robots/fl_robots/mpc_qp.py" = ["F401"]  # optional-dep soft import
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
 
 [tool.setuptools]
 include-package-data = true
@@ -78,6 +171,8 @@ include-package-data = true
 
 [tool.setuptools.packages.find]
 where = ["src/fl_robots"]
+include = ["fl_robots*"]
+exclude = ["fl_robots_interfaces*", "launch*", "config*", "resource*", "test*"]
 
 [tool.setuptools.package-data]
 fl_robots = [
@@ -88,10 +183,66 @@ fl_robots = [
 
 [tool.mypy]
 python_version = "3.10"
-warn_return_any = true
+warn_return_any = false
 warn_unused_configs = true
 ignore_missing_imports = true
 mypy_path = "src/fl_robots"
+exclude = [
+    "src/fl_robots/fl_robots.egg-info",
+    "src/fl_robots_interfaces",
+    "dist",
+    "build",
+    ".venv",
+]
+# Relaxed strictness — strict mode is aspirational; the ROS bridge, Pydantic
+# v2 (ConfigDict(slots=...)), and optional-dep stubs still have rough edges.
+check_untyped_defs = true
+disallow_incomplete_defs = false
+disallow_untyped_defs = false
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = false
+# Pydantic ConfigDict accepts slots=True at runtime but the TypedDict stub
+# doesn't know; the ros_compat module intentionally rebinds names inside an
+# except branch.
+disable_error_code = ["typeddict-unknown-key", "no-redef"]
+
+[[tool.mypy.overrides]]
+module = [
+    "torch.*",
+    "torchvision.*",
+    "numpy.*",
+    "scipy.*",
+    "sklearn.*",
+    "flask_cors.*",
+    "flask_socketio.*",
+    "eventlet.*",
+    "osqp.*",
+    "matplotlib.*",
+    "rclpy.*",
+    "std_msgs.*",
+    "geometry_msgs.*",
+    "rcl_interfaces.*",
+    "fl_robots_interfaces.*",
+    "structlog.*",
+    "prometheus_client.*",
+]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = [
+    "fl_robots.observability.logging",
+    "fl_robots.aggregator",
+    "fl_robots.robot_agent",
+    "fl_robots.coordinator",
+    "fl_robots.web_dashboard",
+    "fl_robots.digital_twin",
+    "fl_robots.monitor",
+]
+# These modules either wrap untyped ROS stubs or bridge to third-party
+# libraries (structlog, flask-socketio) whose typing is unreliable.
+check_untyped_defs = false
+ignore_errors = true
 
 [tool.pyright]
 include = ["main.py", "src", "tests"]

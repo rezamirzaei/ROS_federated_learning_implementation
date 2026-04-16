@@ -1,13 +1,13 @@
 import math
 
 from fl_robots.message_bus import MessageBus
-from fl_robots.sim_models import Pose2D, RobotState, AggregationRecord, BusEvent
 from fl_robots.mpc import DistributedMPCPlanner
+from fl_robots.sim_models import Pose2D, RobotState
 from fl_robots.simulation import SimulationEngine
 from fl_robots.standalone_web import create_app
 
-
 # ── MessageBus ──────────────────────────────────────────────────────
+
 
 def test_message_bus_records_and_dispatches_events():
     bus = MessageBus()
@@ -62,6 +62,7 @@ def test_message_bus_subscriber_count():
 
 
 # ── MPC ─────────────────────────────────────────────────────────────
+
 
 def test_distributed_mpc_produces_horizon_and_safe_first_step():
     planner = DistributedMPCPlanner(horizon=6)
@@ -120,6 +121,7 @@ def test_mpc_single_robot():
 
 # ── Simulation ──────────────────────────────────────────────────────
 
+
 def test_simulation_aggregates_after_five_training_steps():
     simulation = SimulationEngine(num_robots=4, auto_start=False)
     try:
@@ -130,7 +132,9 @@ def test_simulation_aggregates_after_five_training_steps():
         snapshot = simulation.snapshot()
         assert snapshot["system"]["current_round"] == 1
         assert snapshot["metrics"]["last_aggregation"]["participants"] == 4
-        assert any(message["topic"] == "/fl/aggregation_metrics" for message in snapshot["messages"])
+        assert any(
+            message["topic"] == "/fl/aggregation_metrics" for message in snapshot["messages"]
+        )
     finally:
         simulation.shutdown()
 
@@ -158,9 +162,7 @@ def test_simulation_disturbance_moves_robots():
         positions_before = {rid: (r.pose.x, r.pose.y) for rid, r in sim.robots.items()}
         sim.issue_command("disturbance")
         positions_after = {rid: (r.pose.x, r.pose.y) for rid, r in sim.robots.items()}
-        assert any(
-            positions_before[rid] != positions_after[rid] for rid in positions_before
-        )
+        assert any(positions_before[rid] != positions_after[rid] for rid in positions_before)
         assert sim.controller_state == "RECOVERING"
     finally:
         sim.shutdown()
@@ -177,6 +179,7 @@ def test_simulation_export_has_timestamp():
 
 
 # ── Web routes ──────────────────────────────────────────────────────
+
 
 def test_web_routes_expose_status_and_validate_commands():
     simulation = SimulationEngine(num_robots=3, auto_start=False)

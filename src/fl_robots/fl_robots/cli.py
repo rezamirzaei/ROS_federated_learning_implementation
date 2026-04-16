@@ -11,7 +11,7 @@ from fl_robots.sim_models import BusEvent, Pose2D, RobotState
 from fl_robots.simulation import SimulationEngine
 from fl_robots.standalone_web import create_app
 
-__all__ = ["build_parser", "run_tests", "main"]
+__all__ = ["build_parser", "main", "run_tests"]
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -140,5 +140,3 @@ def main() -> None:
         app.run(host=host, port=port, debug=False)
     finally:
         simulation.shutdown()
-
-

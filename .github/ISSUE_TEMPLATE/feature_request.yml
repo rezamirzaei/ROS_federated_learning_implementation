@@ -1,0 +1,31 @@
+name: Feature request
+description: Propose a new capability, benchmark, or integration.
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / motivation
+      description: What can't you do today that you want to do?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed design
+      description: Sketch the API, module layout, or experiment plan.
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope
+      options:
+        - label: Touches ROS2 nodes (aggregator/coordinator/robot_agent)
+        - label: Changes the standalone dashboard / API
+        - label: New benchmark or FL algorithm (FedAvg / FedProx / …)
+        - label: MPC / robotics change
+        - label: Docs-only
+

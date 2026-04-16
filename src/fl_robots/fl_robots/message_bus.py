@@ -11,7 +11,8 @@ import logging
 import threading
 import time
 from collections import defaultdict, deque
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
+from typing import Any
 
 from .sim_models import BusEvent
 
@@ -19,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 Subscriber = Callable[[BusEvent], None]
 
-__all__ = ["MessageBus", "Subscriber", "BusEvent"]
+__all__ = ["BusEvent", "MessageBus", "Subscriber"]
 
 
 class MessageBus:
@@ -44,11 +45,13 @@ class MessageBus:
             except ValueError:
                 return False
 
-    def publish(self, topic: str, source: str, payload: dict[str, object]) -> BusEvent:
+    def publish(self, topic: str, source: str, payload: Mapping[str, Any]) -> BusEvent:
         event = BusEvent(timestamp=time.time(), topic=topic, source=source, payload=dict(payload))
         with self._lock:
             self._events.append(event)
-            subscribers = list(self._subscribers.get(topic, ())) + list(self._subscribers.get("*", ()))
+            subscribers = list(self._subscribers.get(topic, ())) + list(
+                self._subscribers.get("*", ())
+            )
 
         for handler in subscribers:
             try:

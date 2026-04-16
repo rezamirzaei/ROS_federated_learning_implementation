@@ -22,11 +22,11 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 __all__ = [
-    "Pose2D",
-    "TrajectoryPoint",
-    "RobotState",
-    "BusEvent",
     "AggregationRecord",
+    "BusEvent",
+    "Pose2D",
+    "RobotState",
+    "TrajectoryPoint",
 ]
 
 
@@ -53,7 +53,7 @@ class Pose2D(BaseModel):
         """Serialize to a plain dictionary."""
         return self.model_dump()
 
-    def __repr__(self) -> str:  # noqa: D105
+    def __repr__(self) -> str:
         return f"Pose2D(x={self.x:.3f}, y={self.y:.3f}, heading={self.heading:.3f})"
 
 
@@ -164,6 +164,3 @@ class RobotState(BaseModel):
             "last_plan_cost": self.last_plan_cost,
             "last_tracking_error": self.last_tracking_error,
         }
-
-
-

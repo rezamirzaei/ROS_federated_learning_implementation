@@ -1,0 +1,130 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint & Type-check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - name: Install project (core + dev + ml)
+        run: uv sync --extra dev --extra ml
+      - name: Ruff lint
+        run: uv run ruff check .
+      - name: Ruff format --check
+        run: uv run ruff format --check .
+      - name: Mypy (package only)
+        run: uv run mypy src/fl_robots/fl_robots
+
+  standalone-tests:
+    name: Standalone tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - name: Set up Python
+        run: uv python install ${{ matrix.python-version }}
+      - name: Install project (core + dev + ml + viz + qp)
+        run: uv sync --extra dev --extra ml --extra viz --extra qp --python ${{ matrix.python-version }}
+      - name: Run pytest with coverage
+        run: uv run --python ${{ matrix.python-version }} pytest tests/ -v --cov=fl_robots --cov-report=xml --cov-report=term
+      - name: Upload coverage
+        if: matrix.python-version == '3.11'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml
+          path: coverage.xml
+
+  docker-standalone:
+    name: Docker standalone image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build standalone-runtime
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          target: standalone-runtime
+          push: false
+          load: true
+          tags: fl-robots-standalone:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Build standalone-test and run pytest inside
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          target: standalone-test
+          push: false
+          load: true
+          tags: fl-robots-test:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Run tests inside container
+        run: docker run --rm fl-robots-test:ci
+
+  ros-build:
+    name: ROS2 Humble workspace build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build ros-runtime stage (compiles fl_robots + fl_robots_interfaces)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          target: ros-runtime
+          push: false
+          load: true
+          tags: fl-robots-ros:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Smoke-test ROS container — import the package under a sourced env
+        run: |
+          docker run --rm fl-robots-ros:ci bash -lc '
+            source /opt/ros/humble/setup.bash &&
+            source /ros2_ws/install/setup.bash &&
+            python3 -c "from fl_robots import aggregator, coordinator, robot_agent; print(\"OK\")"
+          '
+
+  benchmark:
+    name: MNIST FedAvg benchmark (smoke)
+    runs-on: ubuntu-latest
+    needs: standalone-tests
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - run: uv sync --extra ml --extra dev
+      - name: Run 3-round smoke benchmark
+        run: uv run python scripts/benchmark.py --rounds 3 --clients 4 --samples-per-client 400 --output results/ci_benchmark.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ci-benchmark
+          path: results/ci_benchmark.json
+
+
+

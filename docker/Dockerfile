@@ -11,11 +11,11 @@ WORKDIR /app
 COPY pyproject.toml README.md main.py /app/
 COPY src/fl_robots /app/src/fl_robots
 
+# Install CPU-only torch wheel plus the `ml` extra so the aggregation /
+# simple_nn code paths (and their tests) work inside the lightweight image.
 RUN python -m pip install --upgrade pip setuptools wheel && \
-    python -m pip install \
-        "flask>=3.0.0" \
-        "pydantic>=2.0.0" && \
-    python -m pip install --no-deps .
+    python -m pip install --extra-index-url https://download.pytorch.org/whl/cpu \
+        ".[ml]"
 
 EXPOSE 5000
 
@@ -25,7 +25,7 @@ FROM standalone-runtime AS standalone-test
 
 COPY tests /app/tests
 
-RUN python -m pip install "pytest>=7.4.0"
+RUN python -m pip install "pytest>=7.4.0" "pytest-cov>=4.1.0"
 
 CMD ["python", "-m", "pytest", "tests/", "-v", "--tb=short"]
 

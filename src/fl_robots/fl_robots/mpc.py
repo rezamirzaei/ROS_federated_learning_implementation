@@ -14,7 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from .sim_models import Pose2D, RobotState, TrajectoryPoint
 
-__all__ = ["MPCConfig", "MPCPlan", "DistributedMPCPlanner"]
+__all__ = ["DistributedMPCPlanner", "MPCConfig", "MPCPlan"]
 
 
 def _safe_atan2(y: float, x: float) -> float:
@@ -111,8 +111,16 @@ class DistributedMPCPlanner:
                 next_x = current.x + (vx * self.dt)
                 next_y = current.y + (vy * self.dt)
                 candidate_cost = self._cost(
-                    next_x, next_y, vx, vy, current_velocity, target,
-                    step, robot.robot_id, predicted_neighbors, all_robots,
+                    next_x,
+                    next_y,
+                    vx,
+                    vy,
+                    current_velocity,
+                    target,
+                    step,
+                    robot.robot_id,
+                    predicted_neighbors,
+                    all_robots,
                 )
                 if candidate_cost < best_cost:
                     best_cost = candidate_cost
@@ -124,10 +132,16 @@ class DistributedMPCPlanner:
 
             path.append(best_point)
             total_cost += best_cost
-            current = Pose2D(best_point.x, best_point.y, _safe_atan2(best_velocity[1], best_velocity[0]))
+            current = Pose2D(
+                best_point.x, best_point.y, _safe_atan2(best_velocity[1], best_velocity[0])
+            )
             current_velocity = best_velocity
 
-        tracking_error = math.dist((path[0].x, path[0].y), target) if path else math.dist((current.x, current.y), target)
+        tracking_error = (
+            math.dist((path[-1].x, path[-1].y), target)
+            if path
+            else math.dist((current.x, current.y), target)
+        )
         return MPCPlan(
             path=path,
             first_velocity=first_velocity,
@@ -192,4 +206,3 @@ class DistributedMPCPlanner:
                 separation_cost += 10.0 * (self.safe_distance - distance + 1e-3)
 
         return tracking_cost + smoothness_cost + speed_cost + separation_cost
-

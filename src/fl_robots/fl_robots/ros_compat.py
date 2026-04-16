@@ -13,19 +13,21 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-ROS_IMPORT_ERROR: Optional[ImportError] = None
+ROS_IMPORT_ERROR: ImportError | None = None
 ROS_AVAILABLE = False
 
 try:  # pragma: no cover - exercised only in a real ROS environment
     import rclpy as rclpy
     from geometry_msgs.msg import Twist as Twist
+    from rcl_interfaces.msg import SetParametersResult as SetParametersResult
     from rclpy.action import ActionServer as ActionServer
     from rclpy.action import CancelResponse as CancelResponse
     from rclpy.action import GoalResponse as GoalResponse
-    from rclpy.callback_groups import MutuallyExclusiveCallbackGroup as MutuallyExclusiveCallbackGroup
+    from rclpy.callback_groups import (
+        MutuallyExclusiveCallbackGroup as MutuallyExclusiveCallbackGroup,
+    )
     from rclpy.callback_groups import ReentrantCallbackGroup as ReentrantCallbackGroup
     from rclpy.executors import MultiThreadedExecutor as MultiThreadedExecutor
-    from rcl_interfaces.msg import SetParametersResult as SetParametersResult
     from rclpy.node import Node as Node
     from rclpy.qos import DurabilityPolicy as DurabilityPolicy
     from rclpy.qos import HistoryPolicy as HistoryPolicy
@@ -36,7 +38,7 @@ try:  # pragma: no cover - exercised only in a real ROS environment
     ROS_AVAILABLE = True
 except ImportError as exc:  # pragma: no cover - exercised in local non-ROS dev
     ROS_IMPORT_ERROR = exc
-    
+
     class _RclpyStub:
         def init(self, *args: Any, **kwargs: Any) -> None:
             require_ros()
@@ -158,8 +160,8 @@ except ImportError as exc:  # pragma: no cover - exercised in local non-ROS dev
             self.successful = successful
 
     class String:
-        def __init__(self) -> None:
-            self.data = ""
+        def __init__(self, data: str = "") -> None:
+            self.data = data
 
     class _Vector3:
         def __init__(self) -> None:
@@ -204,5 +206,3 @@ __all__ = [
     "rclpy",
     "require_ros",
 ]
-
-

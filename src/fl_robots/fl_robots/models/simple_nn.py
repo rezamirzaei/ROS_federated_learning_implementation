@@ -14,10 +14,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 __all__ = [
-    "SimpleNavigationNet",
     "ObstacleAvoidanceNet",
-    "federated_averaging",
+    "SimpleNavigationNet",
     "compute_gradient_divergence",
+    "federated_averaging",
 ]
 
 
@@ -102,7 +102,7 @@ class SimpleNavigationNet(nn.Module):
         self.eval()
         with torch.no_grad():
             logits = self.forward(x)
-            return torch.argmax(logits, dim=-1).item()
+            return int(torch.argmax(logits, dim=-1).item())
 
     def get_weights(self) -> dict[str, np.ndarray]:
         """
@@ -145,7 +145,7 @@ class SimpleNavigationNet(nn.Module):
             param_shape = param.shape
             param_size = int(np.prod(param_shape))
             param.data = torch.from_numpy(
-                flat_weights[idx:idx + param_size].reshape(param_shape).copy()
+                flat_weights[idx : idx + param_size].reshape(param_shape).copy()
             ).to(dtype=param.dtype)
             idx += param_size
 
@@ -220,8 +220,7 @@ class ObstacleAvoidanceNet(nn.Module):
 
 
 def federated_averaging(
-    weights_list: list[dict[str, np.ndarray]],
-    sample_counts: list[int] | None = None
+    weights_list: list[dict[str, np.ndarray]], sample_counts: list[int] | None = None
 ) -> dict[str, np.ndarray]:
     """
     Perform Federated Averaging (FedAvg) on a list of model weights.
@@ -259,15 +258,16 @@ def federated_averaging(
 
     # Compute weighted average
     for client_idx, (weights, weight_factor) in enumerate(zip(weights_list, client_weights)):
-        for key in averaged_weights.keys():
-            averaged_weights[key] += np.asarray(weights[key], dtype=averaged_weights[key].dtype) * weight_factor
+        for key in averaged_weights:
+            averaged_weights[key] += (
+                np.asarray(weights[key], dtype=averaged_weights[key].dtype) * weight_factor
+            )
 
     return averaged_weights
 
 
 def compute_gradient_divergence(
-    weights_list: list[dict[str, np.ndarray]],
-    global_weights: dict[str, np.ndarray]
+    weights_list: list[dict[str, np.ndarray]], global_weights: dict[str, np.ndarray]
 ) -> list[float]:
     """
     Compute gradient divergence between local and global models.
@@ -284,9 +284,9 @@ def compute_gradient_divergence(
 
     for local_weights in weights_list:
         total_diff = 0.0
-        for key in global_weights.keys():
+        for key in global_weights:
             diff = local_weights[key] - global_weights[key]
-            total_diff += np.sum(diff ** 2)
+            total_diff += np.sum(diff**2)
         divergences.append(np.sqrt(total_diff))
 
     return divergences

@@ -1,0 +1,22 @@
+# Default owner for everything not otherwise claimed.
+*                                       @rezami
+
+# ROS nodes — require FL / ROS review.
+/src/fl_robots/fl_robots/aggregator.py  @rezami
+/src/fl_robots/fl_robots/coordinator.py @rezami
+/src/fl_robots/fl_robots/robot_agent.py @rezami
+
+# MPC & planner — require robotics review.
+/src/fl_robots/fl_robots/mpc*.py        @rezami
+
+# Benchmarks — results are reproducibility-sensitive.
+/scripts/benchmark.py                   @rezami
+/src/fl_robots/fl_robots/scripts/       @rezami
+/docs/BENCHMARKS.md                     @rezami
+
+# Security-sensitive: auth, OpenAPI schema, compose.
+/src/fl_robots/fl_robots/standalone_web.py @rezami
+/docs/SECURITY.md                       @rezami
+/compose.yaml                           @rezami
+/docker/                                @rezami
+

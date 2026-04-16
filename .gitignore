@@ -121,3 +121,6 @@ models/*.pth
 # Logs
 logs/*.log
 .DS_Store
+
+# Datasets (downloaded at runtime)
+data/
