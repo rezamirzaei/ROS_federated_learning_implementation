@@ -5,12 +5,15 @@
 # This script builds and runs the federated learning multi-robot system.
 #
 # Usage:
-#   ./run.sh              # Build and run the system
-#   ./run.sh build        # Only build Docker image
-#   ./run.sh start        # Start containers (assumes image exists)
+#   ./run.sh              # Build and run the lightweight dashboard
+#   ./run.sh ros          # Build and run the full ROS stack
+#   ./run.sh build lite   # Only build the lightweight dashboard image
+#   ./run.sh build ros    # Only build the ROS image
+#   ./run.sh start lite   # Start the lightweight dashboard
+#   ./run.sh start ros    # Start the ROS stack
 #   ./run.sh stop         # Stop all containers
 #   ./run.sh logs         # View all logs
-#   ./run.sh logs monitor # View specific container logs
+#   ./run.sh logs NAME    # View specific container logs
 #   ./run.sh status       # Check container status
 #   ./run.sh clean        # Stop and remove containers/images
 #   ./run.sh test         # Run tests inside container
@@ -28,7 +31,13 @@ NC='\033[0m' # No Color
 # Project directories
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DOCKER_DIR="$SCRIPT_DIR/docker"
-IMAGE_NAME="fl-robots:latest"
+LITE_IMAGE_NAME="fl-robots-standalone:latest"
+ROS_IMAGE_NAME="fl-robots-ros:latest"
+TEST_IMAGE_NAME="fl-robots-test:latest"
+COMPOSE_CMD=(docker compose)
+LITE_PROFILE="lite"
+ROS_PROFILE="ros"
+TOOLS_PROFILE="tools"
 
 # Print colored message
 print_msg() {
@@ -59,34 +68,64 @@ check_docker() {
     fi
 }
 
+resolve_mode() {
+    case "${1:-lite}" in
+        lite|light|dashboard)
+            echo "lite"
+            ;;
+        ros|full)
+            echo "ros"
+            ;;
+        *)
+            print_error "Unknown mode: $1"
+            echo "Use 'lite' or 'ros'."
+            exit 1
+            ;;
+    esac
+}
+
+service_running() {
+    cd "$DOCKER_DIR"
+    "${COMPOSE_CMD[@]}" ps --services --status running | grep -qx "$1"
+}
+
 # Build Docker image
 build_image() {
+    local mode
+    mode="$(resolve_mode "${1:-lite}")"
     print_header "Building Docker Image"
-    print_msg "Building fl-robots:latest..."
 
-    cd "$SCRIPT_DIR"
-    docker build -f docker/Dockerfile -t "$IMAGE_NAME" .
-
-    print_msg "Build complete!"
+    cd "$DOCKER_DIR"
+    if [ "$mode" = "lite" ]; then
+        print_msg "Building lightweight dashboard image..."
+        "${COMPOSE_CMD[@]}" --profile "$LITE_PROFILE" build dashboard
+        print_msg "Build complete: $LITE_IMAGE_NAME"
+    else
+        print_msg "Building full ROS image..."
+        "${COMPOSE_CMD[@]}" --profile "$ROS_PROFILE" build aggregator
+        print_msg "Build complete: $ROS_IMAGE_NAME"
+    fi
 }
 
 # Start containers
 start_containers() {
+    local mode
+    mode="$(resolve_mode "${1:-lite}")"
     print_header "Starting Federated Learning System"
 
     cd "$DOCKER_DIR"
-    docker-compose up -d
+    "${COMPOSE_CMD[@]}" down >/dev/null 2>&1 || true
 
-    print_msg "Containers started!"
-    print_msg ""
-    print_msg "System Components:"
-    print_msg "  • Aggregator  - FedAvg server"
-    print_msg "  • Robot 1-3   - Learning agents"
-    print_msg "  • Coordinator - Training orchestrator"
-    print_msg "  • Monitor     - Metrics dashboard"
-    print_msg ""
-    print_msg "View logs with: $0 logs"
-    print_msg "Stop system with: $0 stop"
+    if [ "$mode" = "lite" ]; then
+        "${COMPOSE_CMD[@]}" --profile "$LITE_PROFILE" up --build -d dashboard
+        print_msg "Lightweight dashboard started at http://localhost:5000"
+        print_msg "Use '$0 ros' for the full ROS multi-container stack."
+    else
+        "${COMPOSE_CMD[@]}" --profile "$ROS_PROFILE" up --build -d
+        print_msg "Full ROS stack started."
+        print_msg "View logs with: $0 logs"
+        print_msg "Stop system with: $0 stop"
+    fi
 }
 
 # Stop containers
@@ -94,7 +133,7 @@ stop_containers() {
     print_header "Stopping Federated Learning System"
 
     cd "$DOCKER_DIR"
-    docker-compose down
+    "${COMPOSE_CMD[@]}" down
 
     print_msg "All containers stopped."
 }
@@ -105,10 +144,10 @@ view_logs() {
 
     if [ -z "$1" ]; then
         print_msg "Viewing all container logs (Ctrl+C to exit)..."
-        docker-compose logs -f
+        "${COMPOSE_CMD[@]}" logs -f
     else
         print_msg "Viewing logs for $1 (Ctrl+C to exit)..."
-        docker-compose logs -f "$1"
+        "${COMPOSE_CMD[@]}" logs -f "$1"
     fi
 }
 
@@ -117,11 +156,17 @@ check_status() {
     print_header "System Status"
 
     cd "$DOCKER_DIR"
-    docker-compose ps
+    "${COMPOSE_CMD[@]}" ps
 
-    echo ""
-    print_msg "Active ROS2 Topics:"
-    docker-compose exec -T aggregator bash -c "source /ros2_ws/install/setup.bash && ros2 topic list 2>/dev/null" || print_warn "Could not list topics"
+    if service_running dashboard; then
+        echo ""
+        print_msg "Dashboard URL: http://localhost:5000"
+        curl -fsS http://localhost:5000/api/health || print_warn "Dashboard health endpoint is not responding yet"
+    elif service_running aggregator; then
+        echo ""
+        print_msg "Active ROS2 Topics:"
+        "${COMPOSE_CMD[@]}" exec -T aggregator bash -c "source /ros2_ws/install/setup.bash && ros2 topic list 2>/dev/null" || print_warn "Could not list topics"
+    fi
 }
 
 # Clean up
@@ -130,10 +175,10 @@ clean_up() {
 
     print_msg "Stopping containers..."
     cd "$DOCKER_DIR"
-    docker-compose down --volumes --remove-orphans 2>/dev/null || true
+    "${COMPOSE_CMD[@]}" down --volumes --remove-orphans 2>/dev/null || true
 
-    print_msg "Removing Docker image..."
-    docker rmi "$IMAGE_NAME" 2>/dev/null || true
+    print_msg "Removing Docker images..."
+    docker rmi "$LITE_IMAGE_NAME" "$ROS_IMAGE_NAME" "$TEST_IMAGE_NAME" 2>/dev/null || true
 
     print_msg "Cleanup complete!"
 }
@@ -143,10 +188,7 @@ run_tests() {
     print_header "Running Tests"
 
     cd "$DOCKER_DIR"
-    docker-compose run --rm aggregator bash -c "
-        cd /ros2_ws &&
-        python3 -m pytest tests/ -v --tb=short
-    "
+    "${COMPOSE_CMD[@]}" --profile "$TOOLS_PROFILE" run --rm test_runner
 }
 
 # Show dashboard
@@ -154,7 +196,19 @@ show_dashboard() {
     print_header "Training Dashboard"
 
     cd "$DOCKER_DIR"
-    docker-compose logs monitor 2>&1 | grep -A 20 "FEDERATED LEARNING MONITOR DASHBOARD" | tail -25
+    if service_running dashboard; then
+        curl -fsS http://localhost:5000/api/status | python3 -c '
+import json, sys
+data = json.load(sys.stdin)
+print(f"state={data[\"system\"][\"controller_state\"]}")
+print(f"robots={data[\"system\"][\"robot_count\"]}")
+print(f"round={data[\"system\"][\"current_round\"]}")
+print(f"avg_accuracy={data[\"metrics\"][\"avg_accuracy\"]:.2f}")
+print(f"avg_loss={data[\"metrics\"][\"avg_loss\"]:.3f}")
+' || print_warn "Dashboard API is not responding yet"
+    else
+        "${COMPOSE_CMD[@]}" logs monitor 2>&1 | grep -A 20 "FEDERATED LEARNING MONITOR DASHBOARD" | tail -25
+    fi
 }
 
 # Main execution
@@ -163,10 +217,10 @@ main() {
 
     case "${1:-}" in
         build)
-            build_image
+            build_image "${2:-lite}"
             ;;
         start)
-            start_containers
+            start_containers "${2:-lite}"
             ;;
         stop)
             stop_containers
@@ -186,40 +240,22 @@ main() {
         dashboard)
             show_dashboard
             ;;
+        ros|full)
+            start_containers "ros"
+            ;;
         ""|run)
-            # Default: build and run
-            print_header "ROS2 Federated Learning System"
-            print_msg "Starting complete system..."
-            echo ""
-
-            # Check if image exists
-            if ! docker image inspect "$IMAGE_NAME" > /dev/null 2>&1; then
-                print_msg "Docker image not found. Building..."
-                build_image
-            else
-                print_msg "Using existing Docker image: $IMAGE_NAME"
-            fi
-
-            start_containers
-
-            echo ""
-            print_msg "System is running!"
-            print_msg ""
-            print_msg "Quick Commands:"
-            print_msg "  ./run.sh logs          - View all logs"
-            print_msg "  ./run.sh logs monitor  - View training dashboard"
-            print_msg "  ./run.sh dashboard     - Show current metrics"
-            print_msg "  ./run.sh status        - Check container status"
-            print_msg "  ./run.sh stop          - Stop the system"
-            echo ""
+            print_header "FL-ROBOTS Docker"
+            print_msg "Starting lightweight dashboard..."
+            start_containers "lite"
             ;;
         help|--help|-h)
             echo "Usage: $0 [command]"
             echo ""
             echo "Commands:"
-            echo "  (none), run  Build and start the system"
-            echo "  build        Build Docker image only"
-            echo "  start        Start containers (image must exist)"
+            echo "  (none), run        Build and start the lightweight dashboard"
+            echo "  ros               Build and start the full ROS stack"
+            echo "  build [lite|ros]  Build a Docker image"
+            echo "  start [lite|ros]  Start containers"
             echo "  stop         Stop all containers"
             echo "  logs [name]  View logs (optionally for specific container)"
             echo "  dashboard    Show current training metrics"
@@ -229,8 +265,9 @@ main() {
             echo "  help         Show this help message"
             echo ""
             echo "Examples:"
-            echo "  $0                  # Build and run everything"
-            echo "  $0 logs monitor     # View monitor logs"
+            echo "  $0                  # Start the lightweight dashboard"
+            echo "  $0 ros              # Start the full ROS stack"
+            echo "  $0 logs dashboard   # View dashboard logs"
             echo "  $0 logs aggregator  # View aggregator logs"
             ;;
         *)

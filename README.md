@@ -29,7 +29,7 @@ A comprehensive ROS2 project demonstrating **distributed federated learning** ac
 - **📨 Topic-Level Message Passing** — In-process ROS-style message bus for commands, telemetry, plans, and aggregation events
 - **🎯 Distributed MPC Showcase** — Coordinated formation control with receding-horizon predictions and collision-aware motion planning
 - **🌐 Interactive Digital Twin** — Browser-rendered formation view with predicted trajectories and leader motion
-- **🐳 Docker Ready** — ROS2 package and Docker deployment still available for the original runtime
+- **🐳 Docker Ready** — lightweight dashboard container by default, with the full ROS2 stack still available on demand
 - **🧪 Comprehensive Testing** — Unit tests now cover the new message bus, MPC planner, simulation engine, and web routes
 
 ## 🚀 Quick Start
@@ -40,37 +40,47 @@ A comprehensive ROS2 project demonstrating **distributed federated learning** ac
 # Navigate to project
 cd ROS
 
-# Run the complete system (builds if needed)
+# Start the lightweight Docker dashboard (fastest path)
 ./run.sh
 
+# Start the original full ROS2 multi-container stack
+./run.sh ros
+
 # Or use specific commands:
-./run.sh build        # Build Docker image only
-./run.sh start        # Start containers
+./run.sh build lite   # Build lightweight dashboard image only
+./run.sh build ros    # Build full ROS image only
+./run.sh start lite   # Start lightweight dashboard
+./run.sh start ros    # Start full ROS stack
 ./run.sh stop         # Stop all containers
 ./run.sh logs         # View all logs
-./run.sh logs monitor # View training dashboard
+./run.sh logs dashboard # View lightweight dashboard logs
 ./run.sh dashboard    # Show current metrics
 ./run.sh status       # Check container status
 ./run.sh test         # Run test suite
 ./run.sh clean        # Remove all containers/images
 ```
 
+The default Docker path now launches the standalone FL + MPC dashboard in a single slim container at **http://localhost:5000**. Use `./run.sh ros` when you specifically want the original ROS2 multi-node deployment.
+
 ### Standalone Dashboard (No Docker/ROS2)
 
 ```bash
+# Install runtime + dev dependencies with uv
+uv sync --extra dev --extra viz
+
 # Launch the full web dashboard with the built-in multi-agent simulation
-python main.py
+uv run python main.py
 
 # Optional flags
-python main.py --robots 6 --port 5050
-python main.py --manual
+uv run python main.py run --robots 6 --port 5050
+uv run python main.py run --manual
 ```
 
 ### Web Dashboard
 
 Once running, access the interactive dashboard at:
 
-**http://localhost:5000** (or http://localhost:8080 via Docker)
+**http://localhost:5000**
 
 Features:
 - 📊 Real-time coordinator, robot, and aggregation status
@@ -162,13 +172,13 @@ coordinator:
 ./run.sh test
 
 # Or run tests directly
-python -m pytest tests/ -v
+uv run python -m pytest tests/ -v
 
 # Run specific test
-python -m pytest tests/test_aggregation.py -v
+uv run python -m pytest tests/test_aggregation.py -v
 
 # Quick component test (no Docker/ROS2)
-python main.py test
+uv run python main.py test
 ```
 
 ## 📈 Training Results

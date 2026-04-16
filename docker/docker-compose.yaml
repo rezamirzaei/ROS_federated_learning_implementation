@@ -1,24 +1,57 @@
-x-common: &common
-  image: fl-robots:latest
+x-ros-common: &ros-common
+  image: fl-robots-ros:latest
   build:
     context: ..
     dockerfile: docker/Dockerfile
+    target: ros-runtime
   environment:
     - ROS_DOMAIN_ID=42
   networks:
     - ros_network
+  profiles:
+    - ros
   restart: unless-stopped
   volumes:
     - ../logs:/ros2_ws/logs
 
 services:
+  dashboard:
+    image: fl-robots-standalone:latest
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: standalone-runtime
+    container_name: fl_dashboard
+    hostname: dashboard
+    command: ["python", "main.py", "run", "--host", "0.0.0.0", "--port", "5000"]
+    ports:
+      - "5000:5000"
+    profiles:
+      - lite
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://127.0.0.1:5000/api/health').read()"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  test_runner:
+    image: fl-robots-test:latest
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: standalone-test
+    profiles:
+      - tools
+    command: ["python", "-m", "pytest", "tests/", "-v", "--tb=short"]
+
   # Federated Learning Aggregator Node (Lifecycle + Services)
   aggregator:
-    <<: *common
+    <<: *ros-common
     container_name: fl_aggregator
     hostname: aggregator
     command: >
-      bash -c "source /ros2_ws/install/setup.bash && 
+      bash -c "source /ros2_ws/install/setup.bash &&
                ros2 run fl_robots aggregator"
     volumes:
       - ../logs:/ros2_ws/logs
@@ -31,50 +64,50 @@ services:
 
   # Robot Agent 1
   robot_1:
-    <<: *common
+    <<: *ros-common
     container_name: fl_robot_1
     hostname: robot_1
     depends_on:
       aggregator:
         condition: service_healthy
     command: >
-      bash -c "sleep 3 && source /ros2_ws/install/setup.bash && 
+      bash -c "sleep 3 && source /ros2_ws/install/setup.bash &&
                ros2 run fl_robots robot_agent --ros-args -p robot_id:=robot_1"
 
   # Robot Agent 2
   robot_2:
-    <<: *common
+    <<: *ros-common
     container_name: fl_robot_2
     hostname: robot_2
     depends_on:
       aggregator:
         condition: service_healthy
     command: >
-      bash -c "sleep 3 && source /ros2_ws/install/setup.bash && 
+      bash -c "sleep 3 && source /ros2_ws/install/setup.bash &&
                ros2 run fl_robots robot_agent --ros-args -p robot_id:=robot_2"
 
   # Robot Agent 3
   robot_3:
-    <<: *common
+    <<: *ros-common
     container_name: fl_robot_3
     hostname: robot_3
     depends_on:
       aggregator:
         condition: service_healthy
     command: >
-      bash -c "sleep 3 && source /ros2_ws/install/setup.bash && 
+      bash -c "sleep 3 && source /ros2_ws/install/setup.bash &&
                ros2 run fl_robots robot_agent --ros-args -p robot_id:=robot_3"
 
   # Coordinator Node (State Machine Orchestrator)
   coordinator:
-    <<: *common
+    <<: *ros-common
     container_name: fl_coordinator
     hostname: coordinator
     depends_on:
       aggregator:
         condition: service_healthy
     command: >
-      bash -c "sleep 8 && source /ros2_ws/install/setup.bash && 
+      bash -c "sleep 8 && source /ros2_ws/install/setup.bash &&
                ros2 run fl_robots coordinator"
     volumes:
       - ../logs:/ros2_ws/logs
@@ -82,13 +115,13 @@ services:
 
   # Monitor Node (Metrics Persistence)
   monitor:
-    <<: *common
+    <<: *ros-common
     container_name: fl_monitor
     hostname: monitor
     depends_on:
       - coordinator
     command: >
-      bash -c "sleep 10 && source /ros2_ws/install/setup.bash && 
+      bash -c "sleep 10 && source /ros2_ws/install/setup.bash &&
                ros2 run fl_robots monitor"
     volumes:
       - ../logs:/ros2_ws/logs
@@ -96,13 +129,13 @@ services:
 
   # Digital Twin Visualization Node
   digital_twin:
-    <<: *common
+    <<: *ros-common
     container_name: fl_digital_twin
     hostname: digital_twin
     depends_on:
       - monitor
     command: >
-      bash -c "sleep 12 && source /ros2_ws/install/setup.bash && 
+      bash -c "sleep 12 && source /ros2_ws/install/setup.bash &&
                ros2 run fl_robots digital_twin"
     volumes:
       - ../logs:/ros2_ws/logs
@@ -110,7 +143,7 @@ services:
 
   # Web Dashboard Node (MVC + WebSocket)
   web_dashboard:
-    <<: *common
+    <<: *ros-common
     container_name: fl_web_dashboard
     hostname: web_dashboard
     ports:
@@ -118,13 +151,13 @@ services:
     depends_on:
       - digital_twin
     command: >
-      bash -c "sleep 15 && source /ros2_ws/install/setup.bash && 
+      bash -c "sleep 15 && source /ros2_ws/install/setup.bash &&
                ros2 run fl_robots web_dashboard"
     volumes:
       - ../logs:/ros2_ws/logs
       - ../results:/ros2_ws/results
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5000/api/status"]
+      test: ["CMD", "python3", "-c", "from urllib.request import urlopen; urlopen('http://127.0.0.1:5000/api/status').read()"]
       interval: 10s
       timeout: 3s
       retries: 3
