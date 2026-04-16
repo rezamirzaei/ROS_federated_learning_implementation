@@ -270,3 +270,53 @@ def test_rotating_formation_produces_diverse_motion():
     assert max_gap > 0.02, f"robots moving in lockstep (max velocity gap={max_gap})"
     sim.shutdown()
 
+
+def test_capture_mode_awards_score_and_respawns_target():
+    """Place a robot on top of the target → it must capture, score++, target moves."""
+    pytest.importorskip("numpy")  # TOA/capture needs numpy
+    sim = SimulationEngine(num_robots=3, tick_interval=0.4, auto_start=False)
+    # Move one robot directly onto the target so the capture radius hits.
+    rid, robot = next(iter(sim.robots.items()))
+    tgt = sim.target_position
+    robot.pose.x = tgt[0]
+    robot.pose.y = tgt[1]
+    old_target = tgt
+
+    # Snapshot should include the capture section.
+    snap = sim.snapshot()
+    assert "capture" in snap
+    assert snap["capture"]["total_captures"] == 0
+
+    sim.step_once()
+
+    # Score incremented, target moved, history populated.
+    assert sim.robots[rid].capture_score >= 1, "robot at the target failed to capture"
+    assert sim.total_captures >= 1
+    assert sim.target_position != old_target, "target did not respawn after capture"
+    assert len(sim.capture_events) >= 1
+    first = sim.capture_events[0]
+    assert first["robot_id"] == rid
+    # Scoreboard is ranked by score descending; winner must be on top.
+    board = sim.snapshot()["capture"]["scoreboard"]
+    assert board[0]["robot_id"] == rid
+    assert board[0]["score"] >= 1
+    sim.shutdown()
+
+
+def test_capture_mode_drives_robots_toward_estimates():
+    """In capture mode, each robot's formation_offset should encode its
+    private TOA estimate (not a rigid formation slot)."""
+    pytest.importorskip("numpy")
+    sim = SimulationEngine(num_robots=3, tick_interval=0.4, auto_start=False)
+    # Run enough ticks for the TOA estimator to start producing estimates.
+    for _ in range(3):
+        sim.step_once()
+    assert sim._toa_estimator is not None
+    tgt = sim.target_position
+    for rid, robot in sim.robots.items():
+        est = sim._toa_estimator.estimate(rid)
+        expected_offset = (est[0] - tgt[0], est[1] - tgt[1])
+        # formation_offset should match (est − target) up to floating point.
+        assert math.isclose(robot.formation_offset[0], expected_offset[0], abs_tol=1e-6)
+        assert math.isclose(robot.formation_offset[1], expected_offset[1], abs_tol=1e-6)
+    sim.shutdown()

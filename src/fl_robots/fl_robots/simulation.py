@@ -107,6 +107,32 @@ class SimulationConfig(BaseModel):
             "earlier versions, robots appeared to move identically."
         ),
     )
+    capture_enabled: bool = Field(
+        default=True,
+        description=(
+            "Hunt-the-target game mode: each robot drives toward *its own* "
+            "distributed-TOA estimate of the target instead of a formation "
+            "slot. When any robot lands within ``capture_radius`` of the "
+            "actual target, its score increments and a new target is "
+            "spawned inside ``capture_bounds``. Automatically disabled when "
+            "``enable_localization`` is off (no estimator → no hunt)."
+        ),
+    )
+    capture_radius: float = Field(
+        default=0.25,
+        gt=0.0,
+        le=2.0,
+        description="Distance (m) at which a robot is considered to have captured the target.",
+    )
+    capture_bounds: float = Field(
+        default=1.8,
+        gt=0.0,
+        description=(
+            "Half-extent of the square region (±bounds in x and y) where a new "
+            "target spawns after each capture."
+        ),
+    )
+    max_capture_history: int = Field(default=30, ge=0)
 
 
 class SimulationEngine:
@@ -169,6 +195,15 @@ class SimulationEngine:
         #: gives each robot a distinct trajectory instead of every robot
         #: rigidly translating with the leader.
         self._formation_slots: dict[str, tuple[float, float]] = {}
+        #: Dedicated RNG for target respawns so captures are reproducible
+        #: independent of the noise RNG.
+        self._target_rng = random.Random(1337)
+        #: Recent capture events for UI / dashboards. Each entry is
+        #: ``{"tick", "robot_id", "score", "target": {"x","y"}, "new_target": {"x","y"}}``.
+        self.capture_events: deque[dict[str, Any]] = deque(
+            maxlen=cfg.max_capture_history
+        )
+        self.total_captures: int = 0
 
         self.bus.subscribe("/system/command", self._handle_command_event)
         self._reset_locked()
@@ -265,6 +300,21 @@ class SimulationEngine:
                     "current": self.last_toa.as_dict() if self.last_toa else None,
                     "history": toa_tail,
                 },
+                "capture": {
+                    "enabled": self.cfg.capture_enabled and self._toa_estimator is not None,
+                    "target": {"x": self.target_position[0], "y": self.target_position[1]},
+                    "radius": self.cfg.capture_radius,
+                    "bounds": self.cfg.capture_bounds,
+                    "total_captures": self.total_captures,
+                    "scoreboard": sorted(
+                        (
+                            {"robot_id": r.robot_id, "score": r.capture_score}
+                            for r in self.robots.values()
+                        ),
+                        key=lambda e: (-e["score"], e["robot_id"]),
+                    ),
+                    "events": list(self.capture_events)[:20],
+                },
                 "robots": robots,
                 "messages": [evt.as_dict() for evt in self.bus.recent_events(limit=80)],
                 "commands": list(self.command_history),
@@ -341,6 +391,9 @@ class SimulationEngine:
         self._target_phase = 0.0
         self.target_position = tuple(self.cfg.toa_target)  # type: ignore[assignment]
         self.last_aggregation = None
+        self.capture_events.clear()
+        self.total_captures = 0
+        self._target_rng = random.Random(1337)
 
         self._formation_slots.clear()
         for index in range(self.num_robots):
@@ -401,25 +454,48 @@ class SimulationEngine:
             0.9 * math.sin(self.leader_phase * 0.35),
         )
 
-        # ── Rotating formation ──────────────────────────────────────
-        # Each robot's formation slot rotates around the leader at
-        # ``formation_rotation_rate`` rad/s, and we add a small
-        # per-robot radial breathing so trajectories aren't just
-        # translated copies of the leader. This is the fix for the
-        # "robots all move identically" complaint.
-        rot_angle = self.leader_phase * self.cfg.formation_rotation_rate
-        breathing = 0.08 * math.sin(self.leader_phase * 0.9)
-        for robot_id, robot in self.robots.items():
-            base_angle, base_radius = self._formation_slots.get(
-                robot_id, (0.0, self._formation_radius)
-            )
-            # Per-robot phase offset via base_angle means each robot
-            # breathes in/out at a different time — visible diversity.
-            radius = base_radius + breathing * math.cos(base_angle)
-            theta = base_angle + rot_angle
-            robot.formation_offset = (radius * math.cos(theta), radius * math.sin(theta))
+        # TOA runs at the *start* of the tick so the planner sees the
+        # freshest estimates — critical in capture mode where each
+        # robot's reference is its own estimate.
+        now = time.time()
+        if self._toa_estimator is not None:
+            self._run_toa_locked(now)
 
-        plans = self.planner.solve(list(self.robots.values()), self.leader_position)
+        capture_mode = self.cfg.capture_enabled and self._toa_estimator is not None
+        if capture_mode:
+            # ── Hunt mode ───────────────────────────────────────────
+            # Every robot steers toward its *own* distributed TOA
+            # estimate of the target. We encode this in the planner's
+            # existing ``leader + formation_offset`` contract by
+            # pinning the planner's leader to the true target and
+            # setting each robot's offset to (est_i − target). The
+            # result: each robot ends up with a distinct reference
+            # (its private, noisy estimate), so trajectories diverge
+            # naturally as the estimator converges.
+            tgt = self.target_position
+            for robot_id, robot in self.robots.items():
+                est = self._toa_estimator.estimate(robot_id)  # type: ignore[union-attr]
+                robot.formation_offset = (est[0] - tgt[0], est[1] - tgt[1])
+            planner_leader = tgt
+        else:
+            # ── Rotating formation ──────────────────────────────────
+            # Each robot's formation slot rotates around the leader at
+            # ``formation_rotation_rate`` rad/s, and we add a small
+            # per-robot radial breathing so trajectories aren't just
+            # translated copies of the leader. This is the fix for the
+            # "robots all move identically" complaint.
+            rot_angle = self.leader_phase * self.cfg.formation_rotation_rate
+            breathing = 0.08 * math.sin(self.leader_phase * 0.9)
+            for robot_id, robot in self.robots.items():
+                base_angle, base_radius = self._formation_slots.get(
+                    robot_id, (0.0, self._formation_radius)
+                )
+                radius = base_radius + breathing * math.cos(base_angle)
+                theta = base_angle + rot_angle
+                robot.formation_offset = (radius * math.cos(theta), radius * math.sin(theta))
+            planner_leader = self.leader_position
+
+        plans = self.planner.solve(list(self.robots.values()), planner_leader)
 
         min_separation = float("inf")
         formation_error = 0.0
@@ -434,8 +510,8 @@ class SimulationEngine:
                 _safe_atan2(plan.first_velocity[1], plan.first_velocity[0]),
             )
             robot.goal = (
-                self.leader_position[0] + robot.formation_offset[0],
-                self.leader_position[1] + robot.formation_offset[1],
+                planner_leader[0] + robot.formation_offset[0],
+                planner_leader[1] + robot.formation_offset[1],
             )
             robot.predicted_path = plan.path
             robot.last_plan_cost = plan.cost
@@ -469,6 +545,12 @@ class SimulationEngine:
                     min_separation,
                     math.dist((robot.pose.x, robot.pose.y), (other.pose.x, other.pose.y)),
                 )
+
+        # Capture check — runs whether or not capture mode is "officially"
+        # on, so rigid-formation runs also get credit if a robot strays
+        # into the target. Cheap (O(N)).
+        if capture_mode:
+            self._maybe_capture_target_locked()
 
         if self.training_active:
             self._update_training_locked(formation_error / max(len(self.robots), 1), min_separation)
@@ -507,9 +589,9 @@ class SimulationEngine:
                 for d in per_robot_diag:
                     self.mpc_robot_history.append(d)
 
-        # Distributed TOA target localization.
-        if self._toa_estimator is not None:
-            self._run_toa_locked(now)
+        # Distributed TOA target localization: runs at the *start* of
+        # each tick (see top of ``_tick_locked``) so the planner sees
+        # fresh estimates. Nothing to do here.
 
         self.bus.publish(
             "/fl/coordinator_status",
@@ -531,18 +613,28 @@ class SimulationEngine:
         moving target that the local cost never encoded. Set
         ``cfg.toa_target_moving`` to overlay a slow figure-8 and stress
         the constant-velocity predictor prior.
+
+        In capture mode the ground truth is driven by
+        :meth:`_maybe_capture_target_locked` (respawns on each capture),
+        so we simply use whatever ``self.target_position`` is instead of
+        re-reading from config — otherwise every tick would clobber the
+        freshly-spawned target.
         """
-        base_x, base_y = self.cfg.toa_target
-        if self.cfg.toa_target_moving:
-            self._target_phase += 0.4 * self.tick_interval
-            phase = self._target_phase
-            target = (
-                base_x + 0.6 * math.sin(phase),
-                base_y + 0.4 * math.sin(2.0 * phase),
-            )
+        capture_driven = self.cfg.capture_enabled and self._toa_estimator is not None
+        if capture_driven:
+            target = self.target_position
         else:
-            target = (base_x, base_y)
-        self.target_position = target
+            base_x, base_y = self.cfg.toa_target
+            if self.cfg.toa_target_moving:
+                self._target_phase += 0.4 * self.tick_interval
+                phase = self._target_phase
+                target = (
+                    base_x + 0.6 * math.sin(phase),
+                    base_y + 0.4 * math.sin(2.0 * phase),
+                )
+            else:
+                target = (base_x, base_y)
+            self.target_position = target
 
         positions = {rid: (r.pose.x, r.pose.y) for rid, r in self.robots.items()}
         # Noisy TOA / range measurements.
@@ -609,6 +701,77 @@ class SimulationEngine:
         if predicted_xy is not None:
             payload["predicted"] = {"x": predicted_xy[0], "y": predicted_xy[1]}
         self.bus.publish("/localization/toa", "toa-estimator", payload)
+
+    def _maybe_capture_target_locked(self) -> None:
+        """Award a point to the closest robot inside the capture radius and
+        spawn a fresh target.
+
+        Only one capture per tick — if two robots are both inside the
+        radius the closer one wins, which is both fair and avoids
+        double-spawning. The spawn is uniformly random inside a square
+        ``[-capture_bounds, capture_bounds]²`` and guaranteed to be at
+        least ``1.5·capture_radius`` away from every robot so the next
+        round actually requires some travel.
+        """
+        tgt = self.target_position
+        # Find the closest robot and its distance.
+        closest_id: str | None = None
+        closest_dist = float("inf")
+        for rid, robot in self.robots.items():
+            d = math.hypot(robot.pose.x - tgt[0], robot.pose.y - tgt[1])
+            if d < closest_dist:
+                closest_dist = d
+                closest_id = rid
+        if closest_id is None or closest_dist > self.cfg.capture_radius:
+            return
+
+        robot = self.robots[closest_id]
+        robot.capture_score += 1
+        self.total_captures += 1
+
+        new_target = self._spawn_target()
+        self.target_position = new_target
+
+        # Reset the estimator + predictor so they don't drag stale state
+        # toward the old target. The predictor is re-seeded at the new
+        # target so the first post-capture tick already has a sensible
+        # prior, while the TOA estimator's duals are cleared and
+        # per-sensor estimates re-randomised (keeps the ADMM well-conditioned).
+        if self._toa_estimator is not None:
+            self._toa_estimator.reset()
+        if self._target_predictor is not None:
+            self._target_predictor.reset(x=new_target[0], y=new_target[1])
+
+        event = {
+            "tick": self.tick_count,
+            "robot_id": closest_id,
+            "score": robot.capture_score,
+            "total_captures": self.total_captures,
+            "target": {"x": tgt[0], "y": tgt[1]},
+            "new_target": {"x": new_target[0], "y": new_target[1]},
+        }
+        self.capture_events.appendleft(event)
+        self.bus.publish("/localization/capture", "simulation", event)
+
+    def _spawn_target(self) -> tuple[float, float]:
+        """Sample a new target position inside ``±capture_bounds`` that is
+        at least ``1.5·capture_radius`` away from every robot."""
+        bounds = self.cfg.capture_bounds
+        min_dist = 1.5 * self.cfg.capture_radius
+        # Cap attempts so we never loop forever if robots saturate the arena.
+        for _ in range(20):
+            x = self._target_rng.uniform(-bounds, bounds)
+            y = self._target_rng.uniform(-bounds, bounds)
+            if all(
+                math.hypot(r.pose.x - x, r.pose.y - y) >= min_dist
+                for r in self.robots.values()
+            ):
+                return (x, y)
+        # Fall back to an unconstrained sample — the next tick will sort it out.
+        return (
+            self._target_rng.uniform(-bounds, bounds),
+            self._target_rng.uniform(-bounds, bounds),
+        )
 
     @staticmethod
     def _build_knn_topology(

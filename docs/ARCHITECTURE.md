@@ -94,6 +94,7 @@ service server and action server lives in one of the modules listed.
 | `/fl/aggregation_metrics`              | `std_msgs/String` (JSON)| `RELIABLE`, `KEEP_LAST(20)`   | `aggregator`, standalone `simulation`     | `coordinator`, dashboards                  | Per-round FedAvg summary                      |
 | `/fl/global_model`                     | `std_msgs/String` (JSON)| `RELIABLE`, `TRANSIENT_LOCAL` | `aggregator`                              | `robot_agent`                              | Broadcast of aggregated weights               |
 | `/localization/toa`                    | `std_msgs/String` (JSON)| `BEST_EFFORT`, `VOLATILE`     | standalone `simulation`                   | dashboards                                 | Ground-truth + predicted target + RMSE        |
+| `/localization/capture`                | `std_msgs/String` (JSON)| `RELIABLE`, `KEEP_LAST(10)`   | standalone `simulation`                   | dashboards                                 | Capture events: winner robot, score, new target |
 
 Key conventions:
 
@@ -168,6 +169,20 @@ rotates each robot's formation slot around the leader at
 every robot ends up with a *distinct* reference trajectory. Without
 this, a rigid leader-offset formation would make every robot's motion a
 translated copy of the leader's.
+
+### Capture ("hunt-the-target") mode
+
+When `cfg.capture_enabled` is on (default) and the TOA estimator is
+available, the planner reference for each robot is **its own
+distributed TOA estimate** of the target — not a formation slot. The
+true target stays fixed until one of the robots closes to within
+`cfg.capture_radius`; at that moment the winner's `capture_score` is
+incremented, a fresh target is spawned uniformly inside
+`[-capture_bounds, capture_bounds]²` (and at least `1.5·capture_radius`
+from every robot), and both the TOA estimator and the constant-velocity
+predictor are reset around the new target. Every capture is also
+published on the `/localization/capture` topic and appended to the
+`capture_events` ring buffer for the dashboard.
 
 ## Observability pipeline
 

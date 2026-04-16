@@ -142,6 +142,16 @@ class RobotState(BaseModel):
     messages_sent: int = Field(default=0, ge=0)
     last_plan_cost: float = 0.0
     last_tracking_error: float = 0.0
+    capture_score: int = Field(
+        default=0,
+        ge=0,
+        description=(
+            "How many times this robot has physically reached the true "
+            "target in capture/hunt mode. Incremented by the simulation "
+            "engine when the robot's pose lands within "
+            "``cfg.capture_radius`` of ``target_position``."
+        ),
+    )
 
     @field_validator("robot_id")
     @classmethod
@@ -169,6 +179,7 @@ class RobotState(BaseModel):
             "messages_sent": self.messages_sent,
             "last_plan_cost": self.last_plan_cost,
             "last_tracking_error": self.last_tracking_error,
+            "capture_score": self.capture_score,
         }
 
 
