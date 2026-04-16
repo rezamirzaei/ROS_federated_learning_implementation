@@ -220,8 +220,8 @@ class ObstacleAvoidanceNet(nn.Module):
 
 
 def federated_averaging(
-    weights_list: List[dict[str, np.ndarray]],
-    sample_counts: list[int] = None
+    weights_list: list[dict[str, np.ndarray]],
+    sample_counts: list[int] | None = None
 ) -> dict[str, np.ndarray]:
     """
     Perform Federated Averaging (FedAvg) on a list of model weights.
@@ -266,7 +266,7 @@ def federated_averaging(
 
 
 def compute_gradient_divergence(
-    weights_list: List[dict[str, np.ndarray]],
+    weights_list: list[dict[str, np.ndarray]],
     global_weights: dict[str, np.ndarray]
 ) -> list[float]:
     """
