@@ -48,7 +48,7 @@ class CommandRequest(BaseModel):
     simulation engine.
     """
 
-    model_config = ConfigDict(frozen=True, slots=True, extra="forbid")
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     command: CommandLiteral
 

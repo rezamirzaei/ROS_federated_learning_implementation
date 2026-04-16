@@ -53,7 +53,7 @@ class TrainingState(Enum):
 class TrainingConfig(BaseModel):
     """Validated configuration for a training session."""
 
-    model_config = ConfigDict(frozen=True, slots=True)
+    model_config = ConfigDict(frozen=True)
 
     total_rounds: int = Field(default=20, ge=1, description="Total FL rounds")
     min_robots: int = Field(default=2, ge=1, description="Minimum robots to begin")

@@ -40,12 +40,14 @@ def test_static_target_converges_without_noise():
     }
 
     last_rmse = float("inf")
+    res = None
     for _ in range(120):
         res = est.update(sensors, measurements, neighbors, ground_truth=target)
         last_rmse = res.mean_rmse
 
     assert last_rmse < 0.1, f"expected RMSE < 0.1, got {last_rmse}"
     # All estimates should agree on roughly the same point.
+    assert res is not None
     assert res.consensus_gap < 0.15
 
 
@@ -123,5 +125,59 @@ def test_dual_variables_stay_bounded():
 
     # Every dual variable norm should stay bounded (no divergence).
     max_lam = max(float(np.linalg.norm(v)) for v in est._duals.values())
-    assert math.isfinite(max_lam) and max_lam < 50.0
+    assert math.isfinite(max_lam) and math.isfinite(max_lam) and max_lam < 50.0
+
+
+def test_predicted_target_prior_accelerates_convergence():
+    """With a good motion-model prior, the estimator locks on faster."""
+    sensors = _fixed_sensors()
+    target = (0.5, -0.25)
+    nbrs = _fully_connected(list(sensors))
+    meas = {rid: math.hypot(target[0] - p[0], target[1] - p[1]) for rid, p in sensors.items()}
+
+    est_plain = DistributedTOAEstimator(
+        robot_ids=list(sensors),
+        config=TOAConfig(step_size=0.12, rho=0.4, max_inner_iters=2, prior_weight=0.0),
+        seed=0,
+    )
+    est_prior = DistributedTOAEstimator(
+        robot_ids=list(sensors),
+        config=TOAConfig(step_size=0.12, rho=0.4, max_inner_iters=2, prior_weight=0.6),
+        seed=0,
+    )
+
+    r_plain = None
+    r_prior = None
+    for _ in range(8):  # only a few iterations so the prior matters
+        r_plain = est_plain.update(sensors, meas, nbrs, ground_truth=target)
+        r_prior = est_prior.update(
+            sensors, meas, nbrs, ground_truth=target, predicted_target=target
+        )
+    assert r_plain is not None and r_prior is not None
+    assert r_prior.mean_rmse < r_plain.mean_rmse, (
+        f"prior failed to help: plain={r_plain.mean_rmse:.3f}, prior={r_prior.mean_rmse:.3f}"
+    )
+
+
+def test_predictor_tracks_constant_velocity_target():
+    """The α-β predictor should follow a constant-velocity target closely."""
+    from fl_robots.localization import ConstantVelocityTargetPredictor, PredictorConfig
+
+    dt = 0.25
+    pred = ConstantVelocityTargetPredictor(x=0.0, y=0.0, config=PredictorConfig(dt=dt))
+    # True target moves at (0.3, -0.1) m/s.
+    vx_true, vy_true = 0.3, -0.1
+    x, y = 0.0, 0.0
+    errs = []
+    for _ in range(40):
+        x += vx_true * dt
+        y += vy_true * dt
+        px, py = pred.predict()
+        pred.update((x, y))
+        errs.append(math.hypot(px - x, py - y))
+    # After warm-up the tracking error should stabilise well below 0.05 m.
+    assert sum(errs[-10:]) / 10 < 0.05
+
+
+
 

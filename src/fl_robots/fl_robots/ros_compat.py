@@ -11,7 +11,7 @@ otherwise. Call :func:`require_ros` before starting any real ROS node logic.
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 ROS_IMPORT_ERROR: ImportError | None = None
 ROS_AVAILABLE = False

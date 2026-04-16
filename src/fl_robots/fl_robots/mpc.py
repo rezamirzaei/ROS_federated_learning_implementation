@@ -35,7 +35,7 @@ def _safe_atan2(y: float, x: float) -> float:
 class MPCConfig(BaseModel):
     """Validated configuration for the MPC planner."""
 
-    model_config = ConfigDict(frozen=True, slots=True)
+    model_config = ConfigDict(frozen=True)  # type: ignore[call-arg]
 
     horizon: int = Field(default=8, ge=1, le=50, description="Prediction horizon steps")
     dt: float = Field(default=0.35, gt=0.0, le=2.0, description="Time step (seconds)")
@@ -49,7 +49,7 @@ class MPCConfig(BaseModel):
 class MPCPlan(BaseModel):
     """Result of planning for a single robot over the full horizon."""
 
-    model_config = ConfigDict(frozen=True, slots=True)
+    model_config = ConfigDict(frozen=True)  # type: ignore[call-arg]
 
     path: list[TrajectoryPoint]
     first_velocity: tuple[float, float]

@@ -399,7 +399,7 @@ def create_app(simulation: SimulationEngine | None = None) -> Flask:
         """Time-series of global aggregation metrics."""
         sim = _get_simulation(app)
         limit = _parse_limit(request.args.get("limit"))
-        with sim._lock:  # noqa: SLF001 — intentional sharing for hot paths
+        with sim._lock:
             series = list(sim.global_history)
         if limit is not None:
             series = series[-limit:]
@@ -410,7 +410,7 @@ def create_app(simulation: SimulationEngine | None = None) -> Flask:
         """Time-series of per-robot training metrics."""
         sim = _get_simulation(app)
         limit = _parse_limit(request.args.get("limit"))
-        with sim._lock:  # noqa: SLF001
+        with sim._lock:
             buf = sim.robot_history.get(robot_id)
             series = list(buf) if buf else []
         if limit is not None:
@@ -422,7 +422,7 @@ def create_app(simulation: SimulationEngine | None = None) -> Flask:
         """Time-series of MPC per-robot diagnostics (tracking error, iters, solve time)."""
         sim = _get_simulation(app)
         limit = _parse_limit(request.args.get("limit"))
-        with sim._lock:  # noqa: SLF001
+        with sim._lock:
             series = list(sim.mpc_robot_history)
             system = sim.last_mpc_system.as_dict() if sim.last_mpc_system else None
         if limit is not None:
@@ -434,13 +434,13 @@ def create_app(simulation: SimulationEngine | None = None) -> Flask:
         """Time-series of TOA localization (target trajectory, RMSE, consensus)."""
         sim = _get_simulation(app)
         limit = _parse_limit(request.args.get("limit"))
-        with sim._lock:  # noqa: SLF001
+        with sim._lock:
             series = list(sim.toa_history)
         if limit is not None:
             series = series[-limit:]
         return jsonify(
             {
-                "enabled": sim._toa_estimator is not None,  # noqa: SLF001
+                "enabled": sim._toa_estimator is not None,
                 "series": [s.as_dict() for s in series],
             }
         )

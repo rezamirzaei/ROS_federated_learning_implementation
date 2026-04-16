@@ -47,8 +47,8 @@ Convergence properties (verified by ``tests/test_localization.py``):
 from __future__ import annotations
 
 import math
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Iterable, Mapping, Sequence
 
 try:
     import numpy as np
@@ -66,13 +66,24 @@ __all__ = ["DistributedTOAEstimator", "TOAConfig", "TOAUpdateResult"]
 class TOAConfig(BaseModel):
     """Tunable knobs for the distributed TOA estimator."""
 
-    model_config = ConfigDict(frozen=True, slots=True)
+    model_config = ConfigDict(frozen=True)
 
     step_size: float = Field(default=0.18, gt=0.0, le=2.0, description="Primal gradient step η")
     rho: float = Field(default=0.6, gt=0.0, le=5.0, description="ADMM penalty weight ρ")
     max_inner_iters: int = Field(default=4, ge=1, le=50)
     init_radius: float = Field(
         default=1.5, ge=0.0, description="Initial estimate sampled in a disk of this radius"
+    )
+    prior_weight: float = Field(
+        default=0.4,
+        ge=0.0,
+        le=10.0,
+        description=(
+            "Weight μ on the predicted-target prior. When the caller supplies a "
+            "motion-model prediction p̂_pred, the local cost gets an extra "
+            "term ½ μ ‖p − p̂_pred‖², i.e. gradient μ·(p − p̂_pred). Setting 0 "
+            "disables the prior and recovers the pure range/consensus ADMM."
+        ),
     )
 
 
@@ -139,6 +150,7 @@ class DistributedTOAEstimator:
         measurements: Mapping[str, float],
         neighbors: Mapping[str, Iterable[str]],
         ground_truth: tuple[float, float] | None = None,
+        predicted_target: tuple[float, float] | None = None,
     ) -> TOAUpdateResult:
         """Run one tick of the distributed update.
 
@@ -158,9 +170,20 @@ class DistributedTOAEstimator:
         ground_truth
             Optional true target position for RMSE bookkeeping (the
             estimator itself never uses it).
+        predicted_target
+            Optional motion-model prediction of the target (e.g. from a
+            constant-velocity α-β tracker). When provided, every sensor's
+            local cost gets an extra ½ μ ‖p − p̂_pred‖² term — this keeps
+            the consensus anchored between TOA updates even when range
+            measurements are noisy or partially missing, and accelerates
+            convergence when the target moves.
         """
         eta = self.cfg.step_size
         rho = self.cfg.rho
+        mu = self.cfg.prior_weight if predicted_target is not None else 0.0
+        pred_arr = (
+            np.asarray(predicted_target, dtype=float) if predicted_target is not None else None
+        )
         inner = self.cfg.max_inner_iters
 
         # Ensure every sensor in the current tick has an estimate.
@@ -200,6 +223,13 @@ class DistributedTOAEstimator:
                     lam = self._duals.setdefault((rid, j), np.zeros(2, dtype=float))
                     grad += rho * (est - snapshot[j] + lam / rho)
 
+                # Motion-model prior — pulls the estimate toward the
+                # predicted target supplied by the caller. Crucially this
+                # is the *same* p̂_pred for every sensor, so it also
+                # tightens consensus without needing any extra comms.
+                if pred_arr is not None and mu > 0.0:
+                    grad += mu * (est - pred_arr)
+
                 self._estimates[rid] = est - eta * grad
 
         # Dual-ascent step after the primal block — classic ADMM ordering.
@@ -219,7 +249,7 @@ class DistributedTOAEstimator:
 
     # ── Internals ────────────────────────────────────────────────────
 
-    def _random_init(self) -> "np.ndarray":
+    def _random_init(self) -> np.ndarray:
         r = float(self._rng.uniform(0.0, self.cfg.init_radius))
         theta = float(self._rng.uniform(0.0, 2.0 * math.pi))
         return np.asarray([r * math.cos(theta), r * math.sin(theta)], dtype=float)
@@ -273,6 +303,9 @@ class DistributedTOAEstimator:
             for j in range(i + 1, len(values)):
                 gap = max(gap, float(np.linalg.norm(values[i] - values[j])))
         return gap
+
+
+
 
 
 

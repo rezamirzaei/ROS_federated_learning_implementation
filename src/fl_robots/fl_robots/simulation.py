@@ -13,7 +13,7 @@ import random
 import threading
 import time
 from collections import deque
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -32,13 +32,26 @@ from .sim_models import (
     TOASnapshot,
 )
 
+if TYPE_CHECKING:  # pragma: no cover - typing-only import
+    from .localization import (
+        ConstantVelocityTargetPredictor as _ConstantVelocityTargetPredictor,
+    )
+    from .localization import DistributedTOAEstimator as _DistributedTOAEstimator
+
 try:  # Optional — TOA localization needs numpy (shipped via the ml extra).
-    from .localization import DistributedTOAEstimator, TOAConfig
+    from .localization import (
+        ConstantVelocityTargetPredictor,
+        DistributedTOAEstimator,
+        PredictorConfig,
+        TOAConfig,
+    )
 
     _TOA_AVAILABLE = True
 except ImportError:  # pragma: no cover - numpy missing in minimal install
     DistributedTOAEstimator = None  # type: ignore[assignment,misc]
     TOAConfig = None  # type: ignore[assignment,misc]
+    ConstantVelocityTargetPredictor = None  # type: ignore[assignment,misc]
+    PredictorConfig = None  # type: ignore[assignment,misc]
     _TOA_AVAILABLE = False
 
 __all__ = ["SimulationConfig", "SimulationEngine"]
@@ -47,7 +60,7 @@ __all__ = ["SimulationConfig", "SimulationEngine"]
 class SimulationConfig(BaseModel):
     """Validated configuration for the standalone simulation engine."""
 
-    model_config = ConfigDict(frozen=True, slots=True)
+    model_config = ConfigDict(frozen=True)
 
     num_robots: int = Field(default=4, ge=1, le=20, description="Number of simulated robots")
     tick_interval: float = Field(default=0.45, gt=0.0, le=5.0, description="Seconds between ticks")
@@ -63,6 +76,37 @@ class SimulationConfig(BaseModel):
     )
     enable_localization: bool = Field(default=True, description="Run distributed TOA estimator")
     toa_noise_std: float = Field(default=0.05, ge=0.0, le=2.0)
+    toa_target: tuple[float, float] = Field(
+        default=(1.0, 0.5),
+        description=(
+            "Ground-truth target the TOA estimator chases. Fixed by default so "
+            "RMSE actually collapses; enable ``toa_target_moving`` for a "
+            "figure-8 stress test."
+        ),
+    )
+    toa_target_moving: bool = Field(
+        default=False,
+        description=(
+            "If True, overlay a slow figure-8 motion on ``toa_target`` to "
+            "exercise the constant-velocity predictor."
+        ),
+    )
+    toa_use_predictor: bool = Field(
+        default=True,
+        description=(
+            "Feed a constant-velocity predicted target into the TOA estimator "
+            "as a prior each tick (see TOAConfig.prior_weight)."
+        ),
+    )
+    formation_rotation_rate: float = Field(
+        default=0.25,
+        description=(
+            "Angular rate (rad/s) at which every robot's formation slot rotates "
+            "around the leader. 0 freezes the formation into a rigid "
+            "translation — which is exactly why, with default params of 0 in "
+            "earlier versions, robots appeared to move identically."
+        ),
+    )
 
 
 class SimulationEngine:
@@ -117,7 +161,14 @@ class SimulationEngine:
         #: ``/api/ready`` probe to detect a hung background thread.
         self._last_tick_time: float = time.monotonic()
 
-        self._toa_estimator: DistributedTOAEstimator | None = None  # initialised in _reset_locked
+        self._toa_estimator: _DistributedTOAEstimator | None = None  # initialised in _reset_locked
+        self._target_predictor: _ConstantVelocityTargetPredictor | None = None
+        #: Per-robot static formation slot (base_angle, radius). Combined
+        #: with ``formation_rotation_rate`` and ``leader_phase`` at each
+        #: tick to produce a *rotating* formation — this is what actually
+        #: gives each robot a distinct trajectory instead of every robot
+        #: rigidly translating with the leader.
+        self._formation_slots: dict[str, tuple[float, float]] = {}
 
         self.bus.subscribe("/system/command", self._handle_command_event)
         self._reset_locked()
@@ -288,17 +339,21 @@ class SimulationEngine:
         self.leader_phase = 0.0
         self.leader_position = (0.0, 0.0)
         self._target_phase = 0.0
-        self.target_position = (0.0, 0.0)
+        self.target_position = tuple(self.cfg.toa_target)  # type: ignore[assignment]
         self.last_aggregation = None
 
+        self._formation_slots.clear()
         for index in range(self.num_robots):
             angle = (2.0 * math.pi * index) / self.num_robots
-            robot_id = f"robot_{index + 1}"
-            offset = (
-                self._formation_radius * math.cos(angle),
-                self._formation_radius * math.sin(angle),
-            )
+            # Stagger radii so robots don't all trace the same circle —
+            # paired with formation_rotation_rate this gives each agent a
+            # visibly distinct trajectory (fixes the "all robots move the
+            # same way" symptom that plagued the rigid-offset formation).
+            radius = self._formation_radius * (0.85 + 0.15 * (index % 3))
+            self._formation_slots[f"robot_{index + 1}"] = (angle, radius)
+            offset = (radius * math.cos(angle), radius * math.sin(angle))
             pose = Pose2D(offset[0], offset[1], angle)
+            robot_id = f"robot_{index + 1}"
             self.robots[robot_id] = RobotState(
                 robot_id=robot_id,
                 pose=pose,
@@ -319,8 +374,21 @@ class SimulationEngine:
                 config=TOAConfig(),
                 seed=self._rng.randrange(2**31),
             )
+            if self.cfg.toa_use_predictor and ConstantVelocityTargetPredictor is not None:
+                # Seed the predictor at the configured target so the very
+                # first tick's prior is already sensible.
+                self._target_predictor = ConstantVelocityTargetPredictor(
+                    x=self.target_position[0],
+                    y=self.target_position[1],
+                    config=PredictorConfig(dt=self.tick_interval)
+                    if PredictorConfig is not None
+                    else None,
+                )
+            else:
+                self._target_predictor = None
         else:
             self._toa_estimator = None
+            self._target_predictor = None
 
     def _tick_locked(self) -> None:
         self.tick_count += 1
@@ -332,6 +400,25 @@ class SimulationEngine:
             1.4 * math.cos(self.leader_phase * 0.55),
             0.9 * math.sin(self.leader_phase * 0.35),
         )
+
+        # ── Rotating formation ──────────────────────────────────────
+        # Each robot's formation slot rotates around the leader at
+        # ``formation_rotation_rate`` rad/s, and we add a small
+        # per-robot radial breathing so trajectories aren't just
+        # translated copies of the leader. This is the fix for the
+        # "robots all move identically" complaint.
+        rot_angle = self.leader_phase * self.cfg.formation_rotation_rate
+        breathing = 0.08 * math.sin(self.leader_phase * 0.9)
+        for robot_id, robot in self.robots.items():
+            base_angle, base_radius = self._formation_slots.get(
+                robot_id, (0.0, self._formation_radius)
+            )
+            # Per-robot phase offset via base_angle means each robot
+            # breathes in/out at a different time — visible diversity.
+            radius = base_radius + breathing * math.cos(base_angle)
+            theta = base_angle + rot_angle
+            robot.formation_offset = (radius * math.cos(theta), radius * math.sin(theta))
+
         plans = self.planner.solve(list(self.robots.values()), self.leader_position)
 
         min_separation = float("inf")
@@ -436,11 +523,25 @@ class SimulationEngine:
         )
 
     def _run_toa_locked(self, now: float) -> None:
-        """Advance the moving target and run one distributed TOA update."""
-        # Figure-8 target — deterministic, easy to debug visually.
-        self._target_phase += 0.4 * self.tick_interval
-        phase = self._target_phase
-        target = (1.8 * math.sin(phase), 1.2 * math.sin(2.0 * phase))
+        """Run one distributed TOA update against the ground-truth target.
+
+        The target is **fixed** by default (``cfg.toa_target``) so the
+        estimator's RMSE actually collapses to the noise floor — the
+        previous figure-8 ground truth meant ADMM was forever chasing a
+        moving target that the local cost never encoded. Set
+        ``cfg.toa_target_moving`` to overlay a slow figure-8 and stress
+        the constant-velocity predictor prior.
+        """
+        base_x, base_y = self.cfg.toa_target
+        if self.cfg.toa_target_moving:
+            self._target_phase += 0.4 * self.tick_interval
+            phase = self._target_phase
+            target = (
+                base_x + 0.6 * math.sin(phase),
+                base_y + 0.4 * math.sin(2.0 * phase),
+            )
+        else:
+            target = (base_x, base_y)
         self.target_position = target
 
         positions = {rid: (r.pose.x, r.pose.y) for rid, r in self.robots.items()}
@@ -453,13 +554,31 @@ class SimulationEngine:
         # k-NN topology (k=2) — mirrors the paper's local-comms model.
         neighbors = self._build_knn_topology(positions, k=2)
 
+        # Predictor step: advance the motion model, then hand the new
+        # predicted position to the estimator as a Bayesian prior. The
+        # predictor is updated *after* the TOA pass below with the
+        # consensus mean so the next tick sees a better prior.
+        predicted_xy: tuple[float, float] | None = None
+        if self._target_predictor is not None:
+            predicted_xy = self._target_predictor.predict(dt=self.tick_interval)
+
         assert self._toa_estimator is not None
         result = self._toa_estimator.update(
             sensor_positions=positions,
             measurements=measurements,
             neighbors=neighbors,
             ground_truth=target,
+            predicted_target=predicted_xy,
         )
+
+        # Close the loop on the predictor using the consensus mean
+        # estimate as the "measurement" of the target position. Using
+        # the mean (not any single robot's estimate) stops the predictor
+        # from being biased by an outlier sensor.
+        if self._target_predictor is not None and result.estimates:
+            mean_x = sum(e[0] for e in result.estimates.values()) / len(result.estimates)
+            mean_y = sum(e[1] for e in result.estimates.values()) / len(result.estimates)
+            self._target_predictor.update((mean_x, mean_y), dt=self.tick_interval)
 
         estimates = [
             TOAEstimatePoint(
@@ -482,15 +601,14 @@ class SimulationEngine:
         )
         self.last_toa = snap
         self.toa_history.append(snap)
-        self.bus.publish(
-            "/localization/toa",
-            "toa-estimator",
-            {
-                "target": {"x": target[0], "y": target[1]},
-                "mean_rmse": result.mean_rmse,
-                "consensus_gap": result.consensus_gap,
-            },
-        )
+        payload: dict[str, Any] = {
+            "target": {"x": target[0], "y": target[1]},
+            "mean_rmse": result.mean_rmse,
+            "consensus_gap": result.consensus_gap,
+        }
+        if predicted_xy is not None:
+            payload["predicted"] = {"x": predicted_xy[0], "y": predicted_xy[1]}
+        self.bus.publish("/localization/toa", "toa-estimator", payload)
 
     @staticmethod
     def _build_knn_topology(

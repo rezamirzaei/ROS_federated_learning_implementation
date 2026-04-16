@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-
 from fl_robots.simulation import SimulationEngine
 from fl_robots.standalone_web import MPC_EXPLAINER, create_app
 

@@ -232,3 +232,41 @@ def test_qp_warm_cache_tolerates_stale_shapes():
     plan = planner.solve([robot], leader_position=(0.0, 0.0))["r0"]
     assert plan.tracking_error >= 0.0
 
+
+def test_qp_planner_respects_slew_limit():
+    """Step-to-step velocity change must stay within the configured slew."""
+    from fl_robots.mpc_qp import QPMPCPlanner
+    from fl_robots.sim_models import Pose2D, RobotState
+
+    du = 0.04
+    planner = QPMPCPlanner(horizon=6, dt=0.3, max_speed=0.3, slew_limit=du)
+    robot = RobotState(
+        robot_id="r0",
+        pose=Pose2D(0.0, 0.0),
+        velocity=(0.0, 0.0),
+        formation_offset=(5.0, 0.0),
+        goal=(5.0, 0.0),
+    )
+    plan = planner.solve([robot], leader_position=(0.0, 0.0))["r0"]
+    # First-step slew: must be within du of zero starting velocity.
+    assert abs(plan.first_velocity[0]) <= du + 1e-3
+    assert abs(plan.first_velocity[1]) <= du + 1e-3
+
+
+def test_rotating_formation_produces_diverse_motion():
+    """Robots must not all move in lockstep — the rotating formation
+    and per-robot breathing should spread their velocities."""
+    sim = SimulationEngine(num_robots=4, tick_interval=0.4, auto_start=False)
+    # Step a few ticks so motion develops.
+    for _ in range(5):
+        sim.step_once()
+    velocities = [r.velocity for r in sim.robots.values()]
+    # At least one pair of robots must have noticeably different velocity
+    # vectors — the rigid-offset bug produced identical (vx,vy) for all.
+    max_gap = 0.0
+    for i, vi in enumerate(velocities):
+        for vj in velocities[i + 1 :]:
+            max_gap = max(max_gap, math.hypot(vi[0] - vj[0], vi[1] - vj[1]))
+    assert max_gap > 0.02, f"robots moving in lockstep (max velocity gap={max_gap})"
+    sim.shutdown()
+

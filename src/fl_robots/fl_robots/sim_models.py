@@ -42,7 +42,7 @@ __all__ = [
 class Pose2D(BaseModel):
     """2-D pose with heading (radians, counter-clockwise from +x)."""
 
-    model_config = ConfigDict(frozen=False, slots=False, validate_assignment=True)
+    model_config = ConfigDict(frozen=False, validate_assignment=True)
 
     x: float
     y: float
@@ -69,7 +69,7 @@ class Pose2D(BaseModel):
 class TrajectoryPoint(BaseModel):
     """Single waypoint on a planned trajectory."""
 
-    model_config = ConfigDict(frozen=True, slots=False)
+    model_config = ConfigDict(frozen=True)
 
     x: float
     y: float
@@ -100,7 +100,7 @@ class BusEvent(BaseModel):
 class AggregationRecord(BaseModel):
     """Summary metrics for one federated-averaging round."""
 
-    model_config = ConfigDict(frozen=True, slots=True)
+    model_config = ConfigDict(frozen=True)
 
     round_id: int = Field(..., ge=0)
     participants: int = Field(..., ge=0)
@@ -127,7 +127,7 @@ class AggregationRecord(BaseModel):
 class RobotState(BaseModel):
     """Full observable state of a single robot agent."""
 
-    model_config = ConfigDict(frozen=False, slots=True, validate_assignment=True)
+    model_config = ConfigDict(frozen=False, validate_assignment=True)
 
     robot_id: str = Field(..., min_length=1)
     pose: Pose2D
@@ -178,7 +178,7 @@ class RobotState(BaseModel):
 class GlobalMetricPoint(BaseModel):
     """One global aggregation sample for time-series plotting."""
 
-    model_config = ConfigDict(frozen=True, slots=True)
+    model_config = ConfigDict(frozen=True)
 
     tick: int = Field(..., ge=0)
     round_id: int = Field(..., ge=0)
@@ -197,7 +197,7 @@ class GlobalMetricPoint(BaseModel):
 class RobotMetricPoint(BaseModel):
     """One per-robot training sample for per-agent time-series."""
 
-    model_config = ConfigDict(frozen=True, slots=True)
+    model_config = ConfigDict(frozen=True)
 
     robot_id: str = Field(..., min_length=1)
     tick: int = Field(..., ge=0)
@@ -216,7 +216,7 @@ class RobotMetricPoint(BaseModel):
 class MPCRobotDiagnostic(BaseModel):
     """Per-robot MPC solve diagnostics for one tick."""
 
-    model_config = ConfigDict(frozen=True, slots=True)
+    model_config = ConfigDict(frozen=True)
 
     tick: int = Field(..., ge=0)
     robot_id: str = Field(..., min_length=1)
@@ -233,7 +233,7 @@ class MPCRobotDiagnostic(BaseModel):
 class MPCSystemDiagnostic(BaseModel):
     """System-wide MPC problem geometry for the QP panel."""
 
-    model_config = ConfigDict(frozen=True, slots=True)
+    model_config = ConfigDict(frozen=True)
 
     tick: int = Field(..., ge=0)
     planner_kind: str
@@ -254,7 +254,7 @@ class MPCSystemDiagnostic(BaseModel):
 class TOAEstimatePoint(BaseModel):
     """Per-robot estimate of the target position at one tick."""
 
-    model_config = ConfigDict(frozen=True, slots=True)
+    model_config = ConfigDict(frozen=True)
 
     robot_id: str = Field(..., min_length=1)
     x: float
@@ -269,7 +269,7 @@ class TOAEstimatePoint(BaseModel):
 class TOASnapshot(BaseModel):
     """Summary of a TOA localization step — ground truth, estimates, RMSE."""
 
-    model_config = ConfigDict(frozen=True, slots=True)
+    model_config = ConfigDict(frozen=True)
 
     tick: int = Field(..., ge=0)
     timestamp: float = Field(..., ge=0.0)
