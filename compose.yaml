@@ -24,8 +24,11 @@ services:
     container_name: fl_dashboard
     hostname: dashboard
     command: ["python", "main.py", "run", "--host", "0.0.0.0", "--port", "5000"]
+    # Host port 5000 is taken by macOS Control Center / AirPlay Receiver,
+    # so we expose the container on 5050 externally. Override with
+    # `FL_ROBOTS_HOST_PORT=xxxx docker compose up` if 5050 is also busy.
     ports:
-      - "5000:5000"
+      - "${FL_ROBOTS_HOST_PORT:-5050}:5000"
     restart: unless-stopped
     stop_grace_period: 10s
     healthcheck:
