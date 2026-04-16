@@ -1,130 +1,69 @@
-"""
-Flask application factory for the standalone web dashboard.
-
-Serves the *same* HTML/JS/CSS templates used by the ROS2
-:class:`WebDashboardNode`, so the UI is identical whether running with
-or without a ROS2 installation.
-"""
-
 from __future__ import annotations
 
-import io
-import os
-import zipfile
+import json
+import logging
+import time
 from pathlib import Path
-from typing import TYPE_CHECKING
 
-from flask import Flask, jsonify, render_template, request, send_file, send_from_directory
-from flask_cors import CORS
+from flask import Flask, Response, jsonify, render_template, request
 
-if TYPE_CHECKING:
-    from ros_web.simulation import SimulationEngine
+from .simulation import SimulationEngine
 
-# Locate shared web assets (same templates the ROS2 node uses)
-_WEB_DIR = Path(__file__).resolve().parent.parent / "src" / "fl_robots" / "fl_robots" / "web"
-_TEMPLATE_DIR = _WEB_DIR / "templates"
-_STATIC_DIR = _WEB_DIR / "static"
-_RESULTS_DIR = Path(__file__).resolve().parent.parent / "results"
+logger = logging.getLogger(__name__)
+
+_VALID_COMMANDS = frozenset({
+    "start_training", "stop_training", "toggle_autopilot",
+    "step", "disturbance", "reset",
+})
 
 
-def create_app(simulation: "SimulationEngine") -> Flask:
-    """Return a configured Flask app wired to *simulation*."""
-
+def create_app(simulation: SimulationEngine | None = None) -> Flask:
+    base_dir = Path(__file__).resolve().parent
     app = Flask(
         __name__,
-        template_folder=str(_TEMPLATE_DIR),
-        static_folder=str(_STATIC_DIR),
+        template_folder=str(base_dir / "templates"),
+        static_folder=str(base_dir / "static"),
     )
-    CORS(app)
+    app.simulation = simulation or SimulationEngine()  # type: ignore[attr-defined]
 
-    # Optionally attach Socket.IO
-    socketio = None
-    try:
-        from flask_socketio import SocketIO
-        socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
-    except ImportError:
-        pass
-
-    # ── Routes ──────────────────────────────────────────────────────
-
-    @app.route("/")
-    def index():
+    @app.get("/")
+    def index() -> str:
         return render_template("dashboard.html")
 
-    @app.route("/api/status")
-    def api_status():
-        return jsonify(simulation.status)
+    @app.get("/api/health")
+    def health():
+        """Lightweight liveness probe."""
+        return jsonify({"ok": True, "uptime_ticks": app.simulation.tick_count})  # type: ignore[attr-defined]
 
-    @app.route("/api/command", methods=["POST"])
-    def api_command():
-        data = request.get_json(force=True)
-        cmd = data.get("command", "")
-        result = simulation.issue_command(cmd)
-        return jsonify(result)
+    @app.get("/api/status")
+    def status():
+        return jsonify(app.simulation.snapshot())  # type: ignore[attr-defined]
 
-    @app.route("/api/trigger-aggregation", methods=["POST"])
-    def api_trigger_aggregation():
-        result = simulation.issue_command("publish_weights")
-        return jsonify(result)
+    @app.post("/api/command")
+    def command():
+        payload = request.get_json(silent=True) or {}
+        command_name = payload.get("command")
+        if not command_name:
+            return jsonify({"ok": False, "error": "command is required"}), 400
 
-    @app.route("/api/update-hyperparameters", methods=["POST"])
-    def api_update_hyperparameters():
-        data = request.get_json(force=True)
-        lr = float(data.get("learning_rate", 0))
-        bs = int(data.get("batch_size", 0))
-        ep = int(data.get("local_epochs", 0))
-        # Apply to all virtual robots
-        import torch.optim as optim
-        for r in simulation.robots.values():
-            if lr > 0:
-                for pg in r.optimizer.param_groups:
-                    pg["lr"] = lr
-        return jsonify({"success": True, "message": f"Updated LR={lr}, BS={bs}, Epochs={ep}"})
+        command_name = str(command_name)
+        if command_name not in _VALID_COMMANDS:
+            return jsonify({"ok": False, "error": f"Unknown command: {command_name}"}), 400
 
-    @app.route("/api/robots")
-    def api_robots():
-        return jsonify(list(simulation.robots.keys()))
+        try:
+            app.simulation.issue_command(command_name)  # type: ignore[attr-defined]
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
 
-    @app.route("/api/digital-twin")
-    def api_digital_twin():
-        twin_path = _RESULTS_DIR / "digital_twin.png"
-        if twin_path.exists():
-            return send_file(str(twin_path), mimetype="image/png")
-        return "", 404
+        return jsonify({"ok": True, "command": command_name})
 
-    @app.route("/api/download-results")
-    def api_download_results():
-        buf = io.BytesIO()
-        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-            for name in ("aggregation_history.csv", "robot_metrics.json",
-                         "training_summary.json", "digital_twin.png",
-                         "aggregation_history.json"):
-                fp = _RESULTS_DIR / name
-                if fp.exists():
-                    zf.write(str(fp), name)
-        buf.seek(0)
-        return send_file(buf, mimetype="application/zip",
-                         as_attachment=True, download_name="fl_results.zip")
-
-    # ── WebSocket push (if available) ───────────────────────────────
-
-    if socketio is not None:
-        import threading
-
-        def _push_loop():
-            while True:
-                try:
-                    socketio.emit("status_update", simulation.status, namespace="/")
-                except Exception:
-                    pass
-                socketio.sleep(1.5)
-
-        @socketio.on("connect")
-        def _on_connect():
-            pass  # client connected
-
-        # Start background push thread once
-        socketio.start_background_task(_push_loop)
+    @app.get("/api/results")
+    def results():
+        body = json.dumps(app.simulation.export_results(), indent=2)  # type: ignore[attr-defined]
+        return Response(
+            body,
+            mimetype="application/json",
+            headers={"Content-Disposition": "attachment; filename=ros_showcase_results.json"},
+        )
 
     return app
-

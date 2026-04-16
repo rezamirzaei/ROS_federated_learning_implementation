@@ -98,14 +98,14 @@ class SimpleNavigationNet(nn.Module):
 
     def get_weights(self) -> Dict[str, np.ndarray]:
         """
-        Extract model weights as numpy arrays for transmission.
+        Extract full model state (parameters + BN running stats) as numpy arrays.
 
         Returns:
             Dictionary mapping layer names to weight arrays
         """
         weights = {}
-        for name, param in self.named_parameters():
-            weights[name] = param.detach().cpu().numpy()
+        for name, tensor in self.state_dict().items():
+            weights[name] = tensor.detach().cpu().numpy()
         return weights
 
     def set_weights(self, weights: Dict[str, np.ndarray]):
@@ -118,26 +118,27 @@ class SimpleNavigationNet(nn.Module):
         state_dict = self.state_dict()
         for name, weight in weights.items():
             if name in state_dict:
-                state_dict[name] = torch.tensor(weight)
+                state_dict[name] = torch.from_numpy(np.asarray(weight)).to(
+                    dtype=state_dict[name].dtype
+                )
         self.load_state_dict(state_dict)
 
     def get_flat_weights(self) -> np.ndarray:
-        """Get all weights as a single flattened array."""
+        """Get all trainable weights as a single flattened array."""
         weights = []
         for param in self.parameters():
             weights.append(param.detach().cpu().numpy().flatten())
         return np.concatenate(weights)
 
     def set_flat_weights(self, flat_weights: np.ndarray):
-        """Set weights from a flattened array."""
+        """Set trainable weights from a flattened array."""
         idx = 0
         for param in self.parameters():
             param_shape = param.shape
-            param_size = np.prod(param_shape)
-            param.data = torch.tensor(
-                flat_weights[idx:idx + param_size].reshape(param_shape),
-                dtype=param.dtype
-            )
+            param_size = int(np.prod(param_shape))
+            param.data = torch.from_numpy(
+                flat_weights[idx:idx + param_size].reshape(param_shape).copy()
+            ).to(dtype=param.dtype)
             idx += param_size
 
     def count_parameters(self) -> int:
@@ -192,15 +193,17 @@ class ObstacleAvoidanceNet(nn.Module):
 
     def get_weights(self) -> Dict[str, np.ndarray]:
         weights = {}
-        for name, param in self.named_parameters():
-            weights[name] = param.detach().cpu().numpy()
+        for name, tensor in self.state_dict().items():
+            weights[name] = tensor.detach().cpu().numpy()
         return weights
 
     def set_weights(self, weights: Dict[str, np.ndarray]):
         state_dict = self.state_dict()
         for name, weight in weights.items():
             if name in state_dict:
-                state_dict[name] = torch.tensor(weight)
+                state_dict[name] = torch.from_numpy(np.asarray(weight)).to(
+                    dtype=state_dict[name].dtype
+                )
         self.load_state_dict(state_dict)
 
 
@@ -235,15 +238,17 @@ def federated_averaging(
     total_samples = sum(sample_counts)
     client_weights = [count / total_samples for count in sample_counts]
 
-    # Initialize averaged weights with zeros
+    # Initialize averaged weights with a floating dtype so integer buffers
+    # (for example BatchNorm tracking counters) can participate safely.
     averaged_weights = {}
     for key in weights_list[0].keys():
-        averaged_weights[key] = np.zeros_like(weights_list[0][key])
+        dtype = np.result_type(*(weights[key].dtype for weights in weights_list), np.float32)
+        averaged_weights[key] = np.zeros(weights_list[0][key].shape, dtype=dtype)
 
     # Compute weighted average
     for client_idx, (weights, weight_factor) in enumerate(zip(weights_list, client_weights)):
         for key in averaged_weights.keys():
-            averaged_weights[key] += weights[key] * weight_factor
+            averaged_weights[key] += np.asarray(weights[key], dtype=averaged_weights[key].dtype) * weight_factor
 
     return averaged_weights
 

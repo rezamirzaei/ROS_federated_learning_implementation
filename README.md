@@ -25,12 +25,12 @@ A comprehensive ROS2 project demonstrating **distributed federated learning** ac
 ### Application
 - **🤖 Multi-Robot Federated Learning** — 3+ robot agents learning collaboratively
 - **🧠 FedAvg Algorithm** — Industry-standard federated averaging implementation
-- **🌐 MVC Web Dashboard** — Flask + Socket.IO with real-time WebSocket updates
-- **📈 Interactive Charts** — Chart.js loss/accuracy graphs, Canvas topology visualization
-- **🎮 Interactive Controls** — Start/stop training, force aggregation, tune hyperparameters
-- **🔬 Digital Twin** — Matplotlib network visualization
-- **🐳 Docker Ready** — 7-container orchestration with healthchecks
-- **🧪 Comprehensive Testing** — Unit tests + integration tests covering custom interfaces
+- **🌐 MVC Web Dashboard** — Standalone Flask UI with templates, static assets, and controller routes
+- **📨 Topic-Level Message Passing** — In-process ROS-style message bus for commands, telemetry, plans, and aggregation events
+- **🎯 Distributed MPC Showcase** — Coordinated formation control with receding-horizon predictions and collision-aware motion planning
+- **🌐 Interactive Digital Twin** — Browser-rendered formation view with predicted trajectories and leader motion
+- **🐳 Docker Ready** — ROS2 package and Docker deployment still available for the original runtime
+- **🧪 Comprehensive Testing** — Unit tests now cover the new message bus, MPC planner, simulation engine, and web routes
 
 ## 🚀 Quick Start
 
@@ -55,20 +55,15 @@ cd ROS
 ./run.sh clean        # Remove all containers/images
 ```
 
-### Quick Component Test (No Docker/ROS2)
-
-```bash
-# Test model, FedAvg, data generation, MPC, simulation engine
-python main.py test
-```
-
 ### Standalone Dashboard (No Docker/ROS2)
 
 ```bash
-# Launch the full web dashboard with in-process simulation
+# Launch the full web dashboard with the built-in multi-agent simulation
 python main.py
-# or
-python main.py run --robots 4 --port 5000
+
+# Optional flags
+python main.py --robots 6 --port 5050
+python main.py --manual
 ```
 
 ### Web Dashboard
@@ -78,12 +73,11 @@ Once running, access the interactive dashboard at:
 **http://localhost:5000** (or http://localhost:8080 via Docker)
 
 Features:
-- 📊 Real-time system status with WebSocket updates
-- 📈 Loss/accuracy charts (Chart.js)
-- 🌐 Live network topology (Canvas)
-- 🎮 Start/stop training, force aggregation
-- ⚙️ Interactive hyperparameter tuning
-- 📥 Download results as ZIP
+- 📊 Real-time coordinator, robot, and aggregation status
+- 🌐 Browser-based digital twin with predicted MPC horizons
+- 📨 Live topic/message stream for commands, telemetry, and plans
+- 🎮 Start/stop training, step the world, toggle autopilot, inject disturbances
+- 📥 Download the current system snapshot as JSON
 
 ## 🏗️ Architecture
 
