@@ -47,7 +47,7 @@ Reproducible MNIST FedAvg headline (seed=42, 4 clients, 400 samples / client, CP
 - **🚦 Per-IP rate limiting** — sliding-window limiter on mutating endpoints (configurable via env)
 - **🛑 Graceful SIGTERM shutdown** — background simulation thread joins cleanly on Docker stop
 - **🐳 Docker Ready** — lightweight dashboard container by default, with the full ROS2 stack still available on demand
-- **🧪 Comprehensive Testing** — 86 tests, 66 % coverage; ROS nodes driven through a fake-rclpy harness so aggregator/coordinator/robot_agent reach real code paths without a ROS install
+- **🧪 Comprehensive Testing** — automated tests cover standalone flows, production endpoints, property-based invariants, benchmark orchestration, and ROS-facing modules via a fake-rclpy harness; CI enforces the repository coverage floor from `pyproject.toml`
 
 ## 🚀 Quick Start
 

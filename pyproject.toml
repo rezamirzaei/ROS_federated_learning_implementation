@@ -225,10 +225,8 @@ module = [
     "torchvision.*",
     "numpy.*",
     "scipy.*",
-    "sklearn.*",
     "flask_cors.*",
     "flask_socketio.*",
-    "eventlet.*",
     "osqp.*",
     "matplotlib.*",
     "rclpy.*",
@@ -236,7 +234,6 @@ module = [
     "geometry_msgs.*",
     "rcl_interfaces.*",
     "fl_robots_interfaces.*",
-    "structlog.*",
     "prometheus_client.*",
 ]
 ignore_missing_imports = true
