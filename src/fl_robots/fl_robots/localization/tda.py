@@ -74,9 +74,16 @@ class TOAConfig(BaseModel):
 
     step_size: float = Field(default=0.18, gt=0.0, le=2.0, description="Primal gradient step η")
     rho: float = Field(default=0.6, gt=0.0, le=5.0, description="ADMM penalty weight ρ")
-    max_inner_iters: int = Field(default=4, ge=1, le=50)
+    max_inner_iters: int = Field(default=8, ge=1, le=50)
     init_radius: float = Field(
         default=1.5, ge=0.0, description="Initial estimate sampled in a disk of this radius"
+    )
+    seed_with_trilateration: bool = Field(
+        default=True,
+        description=(
+            "On the first update (or after reset), seed all estimates with a "
+            "closed-form least-squares trilateration instead of random init."
+        ),
     )
     prior_weight: float = Field(
         default=0.4,
@@ -135,6 +142,7 @@ class DistributedTOAEstimator:
         #: Dual variables, keyed by the ordered pair (i, j) — one per directed
         #: neighbour edge. Allocated lazily as topology evolves.
         self._duals: dict[tuple[str, str], np.ndarray] = {}
+        self._seeded: bool = False
 
     # ── Public API ───────────────────────────────────────────────────
 
@@ -187,6 +195,13 @@ class DistributedTOAEstimator:
             np.asarray(predicted_target, dtype=float) if predicted_target is not None else None
         )
         inner = self.cfg.max_inner_iters
+
+        # On the very first call (or after reset), bootstrap estimates with a
+        # closed-form trilateration so they start near the true target instead
+        # of near the origin. This prevents the "all robots stuck in corner" issue.
+        if not self._seeded and self.cfg.seed_with_trilateration:
+            self._trilateration_seed(sensor_positions, measurements)
+            self._seeded = True
 
         # Ensure every sensor in the current tick has an estimate.
         for rid in sensor_positions:
@@ -248,6 +263,7 @@ class DistributedTOAEstimator:
         for rid in list(self._estimates):
             self._estimates[rid] = self._random_init()
         self._duals.clear()
+        self._seeded = False
 
     # ── Internals ────────────────────────────────────────────────────
 
@@ -255,6 +271,60 @@ class DistributedTOAEstimator:
         r = float(self._rng.uniform(0.0, self.cfg.init_radius))
         theta = float(self._rng.uniform(0.0, 2.0 * math.pi))
         return np.asarray([r * math.cos(theta), r * math.sin(theta)], dtype=float)
+
+    def _trilateration_seed(
+        self,
+        sensor_positions: Mapping[str, tuple[float, float]],
+        measurements: Mapping[str, float],
+    ) -> None:
+        """Seed all estimates via closed-form linearised trilateration.
+
+        Given sensor positions ``x_i`` and range measurements ``d_i``, we have
+        ``‖p* − x_i‖² = d_i²``.  Subtracting the last equation from the
+        others linearises the system: ``A · p* = b`` where rows of A are
+        ``2(x_n − x_i)`` and entries of b are
+        ``d_i² − d_n² − ‖x_i‖² + ‖x_n‖²``.  Solve via least-squares.
+
+        Falls back to random init if fewer than 2 sensors have measurements or
+        the geometry is degenerate.
+        """
+        # Collect sensors that have both a position and a measurement.
+        ids = [rid for rid in self._estimates if rid in sensor_positions and rid in measurements]
+        if len(ids) < 2:
+            return  # not enough data — keep random init
+
+        positions = np.array([sensor_positions[rid] for rid in ids], dtype=float)
+        dists = np.array([measurements[rid] for rid in ids], dtype=float)
+
+        # Use the last sensor as the reference to linearise.
+        ref_pos = positions[-1]
+        ref_d = dists[-1]
+        n = len(ids) - 1
+
+        A = np.zeros((n, 2), dtype=float)
+        b = np.zeros(n, dtype=float)
+        for i in range(n):
+            A[i] = 2.0 * (ref_pos - positions[i])
+            b[i] = (
+                dists[i] ** 2
+                - ref_d**2
+                - float(np.dot(positions[i], positions[i]))
+                + float(np.dot(ref_pos, ref_pos))
+            )
+
+        try:
+            result, residuals, rank, _ = np.linalg.lstsq(A, b, rcond=None)
+            if rank < 2:
+                return  # degenerate geometry — keep random init
+            seed_pt = result.astype(float)
+        except np.linalg.LinAlgError:
+            return  # numerical failure — keep random init
+
+        # Set every robot's estimate to the trilateration solution (with tiny
+        # jitter so the consensus gap isn't trivially zero).
+        for rid in self._estimates:
+            jitter = self._rng.normal(0.0, 0.01, size=2)
+            self._estimates[rid] = seed_pt + jitter
 
     def _summarise(
         self,

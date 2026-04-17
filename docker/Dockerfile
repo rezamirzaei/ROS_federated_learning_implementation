@@ -19,6 +19,8 @@ FROM python:3.11-slim@${PYTHON_SLIM_DIGEST} AS standalone-runtime
 
 ARG UV_VERSION
 
+COPY --from=ghcr.io/astral-sh/uv:0.9.13 /uv /usr/local/bin/uv
+
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
@@ -32,8 +34,7 @@ WORKDIR /app
 COPY pyproject.toml uv.lock README.md /app/
 
 # Layer 2: Install runtime deps (cached unless pyproject.toml / uv.lock change).
-RUN python -m pip install --upgrade pip setuptools wheel "uv==${UV_VERSION}" && \
-    uv sync --locked --extra ml --no-dev --no-editable --no-install-project --python python
+RUN uv sync --locked --extra ml --no-dev --no-editable --no-install-project --python python
 
 # Layer 3: Copy source and install the project itself.
 COPY src/fl_robots /app/src/fl_robots
@@ -106,7 +107,6 @@ FROM ros:humble-ros-core@${ROS_HUMBLE_CORE_DIGEST} AS ros-runtime
 
 ARG UV_VERSION
 ARG JAMMY_BASH_VERSION
-ARG JAMMY_PYTHON3_PIP_VERSION
 ARG ROS_RCLPY_VERSION
 ARG ROS_STD_MSGS_VERSION
 ARG ROS_GEOMETRY_MSGS_VERSION
@@ -114,6 +114,8 @@ ARG ROS_SENSOR_MSGS_VERSION
 ARG ROS_LIFECYCLE_MSGS_VERSION
 ARG ROS_ROS2CLI_VERSION
 ARG ROS_ROS2LAUNCH_VERSION
+
+COPY --from=ghcr.io/astral-sh/uv:0.9.13 /uv /usr/local/bin/uv
 
 ENV DEBIAN_FRONTEND=noninteractive \
     ROS_DOMAIN_ID=42 \
@@ -126,7 +128,6 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     bash=${JAMMY_BASH_VERSION} \
-    python3-pip=${JAMMY_PYTHON3_PIP_VERSION} \
     ros-humble-rclpy=${ROS_RCLPY_VERSION} \
     ros-humble-std-msgs=${ROS_STD_MSGS_VERSION} \
     ros-humble-geometry-msgs=${ROS_GEOMETRY_MSGS_VERSION} \
@@ -140,8 +141,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # standalone image consume the same locked Python dependency graph.
 WORKDIR /app
 COPY pyproject.toml uv.lock README.md /app/
-RUN pip3 install --no-cache-dir --upgrade pip setuptools wheel "uv==${UV_VERSION}" && \
-    uv sync --locked --extra ml --extra ros --no-dev --no-editable --no-install-project --python /usr/bin/python3
+RUN uv sync --locked --extra ml --extra ros --no-dev --no-editable --no-install-project --python /usr/bin/python3
 COPY src/fl_robots /app/src/fl_robots
 RUN uv sync --locked --extra ml --extra ros --no-dev --no-editable --python /usr/bin/python3
 
