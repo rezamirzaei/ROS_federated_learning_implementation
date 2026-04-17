@@ -752,7 +752,7 @@ class RobotAgentNode(Node):
 
     def _publish_weights(self):
         """Publish local model weights to aggregator."""
-        weights = self.model.get_weights()
+        weights = self.model.get_trainable_weights()
 
         # Convert numpy arrays to lists for JSON serialization
         weights_serializable = {name: arr.tolist() for name, arr in weights.items()}

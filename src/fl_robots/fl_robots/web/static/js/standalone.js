@@ -37,10 +37,23 @@ async function fetchJSON(url) {
   return res.json();
 }
 
+function getCookie(name) {
+  const prefix = `${name}=`;
+  return document.cookie
+    .split(";")
+    .map((part) => part.trim())
+    .find((part) => part.startsWith(prefix))
+    ?.slice(prefix.length) ?? "";
+}
+
 async function sendCommand(command) {
+  const csrfToken = getCookie("fl_robots_csrf_token");
   const response = await fetch("/api/command", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...(csrfToken ? { "X-CSRF-Token": csrfToken } : {}),
+    },
     body: JSON.stringify({ command }),
   });
   if (!response.ok) {
@@ -197,7 +210,7 @@ function renderRobots(robots, robotHistories) {
       const statusLabel = robot.is_training ? "Training active" : "Navigation only";
       return `
         <article class="robot-card" data-robot-id="${robot.robot_id}">
-          <h3 style="color:${colorFor(robot.robot_id)}">${robot.robot_id}</h3>
+          <h3 data-robot-title="${robot.robot_id}">${robot.robot_id}</h3>
           <div class="robot-meta">
             <div><span class="label">Accuracy</span><br>${fmt(robot.accuracy, 1)}%</div>
             <div><span class="label">Loss</span><br>${fmt(robot.training_loss, 3)}</div>
@@ -214,6 +227,8 @@ function renderRobots(robots, robotHistories) {
   // Instantiate / update per-robot mini charts.
   stateEls.robotsGrid.querySelectorAll(".robot-card").forEach((card) => {
     const rid = card.dataset.robotId;
+    const title = card.querySelector("[data-robot-title]");
+    if (title) title.style.color = colorFor(rid);
     const canvas = card.querySelector(".robot-chart");
     let chart = perRobotCharts.get(rid);
     if (!chart || chart.canvas !== canvas) {
@@ -386,12 +401,15 @@ function renderCapture(capture) {
       return `
         <li class="${leadingClass}">
           <span class="medal">${medal}</span>
-          <span class="robot" style="color:${color}">${entry.robot_id}</span>
+          <span class="robot" data-score-robot="${entry.robot_id}">${entry.robot_id}</span>
           <span class="score">${entry.score}</span>
         </li>
       `;
     })
     .join("");
+  stateEls.scoreboard.querySelectorAll("[data-score-robot]").forEach((el) => {
+    el.style.color = colorFor(el.dataset.scoreRobot || "");
+  });
 
   // Events — latest on top, cap at 8 visible.
   const recent = (capture.events || []).slice(0, 8);
@@ -413,11 +431,13 @@ function renderCapture(capture) {
   // Winner banner — sticky until reset.
   if (capture.winner_id) {
     stateEls.captureWinnerBanner.hidden = false;
-    const color = colorFor(capture.winner_id);
-    stateEls.captureWinnerText.innerHTML =
-      `<span style="color:${color};font-weight:700">${capture.winner_id}</span> wins the match!`;
+    stateEls.captureWinnerText.textContent = `${capture.winner_id} wins the match!`;
+    stateEls.captureWinnerText.style.color = colorFor(capture.winner_id);
+    stateEls.captureWinnerText.style.fontWeight = "700";
   } else {
     stateEls.captureWinnerBanner.hidden = true;
+    stateEls.captureWinnerText.style.color = "";
+    stateEls.captureWinnerText.style.fontWeight = "";
   }
 
   // Track the freshest capture tick so the twin can flash it once.
@@ -445,7 +465,7 @@ async function loadExplainer() {
       <p><b>Distributed aspect:</b> ${e.distributed_aspect}</p>
     `;
   } catch (err) {
-    stateEls.mpcExplainerBody.innerHTML = `<p style="color:#ff6b6b">${err.message}</p>`;
+    stateEls.mpcExplainerBody.innerHTML = `<p class="error-text">${err.message}</p>`;
   }
 }
 

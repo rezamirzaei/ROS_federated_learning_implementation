@@ -16,19 +16,20 @@ from fl_robots.simulation import SimulationEngine
 from fl_robots.standalone_web import create_app
 
 
-def test_command_lifecycle_and_metrics_scrape():
+def test_command_lifecycle_and_metrics_scrape(csrf_headers):
     sim = SimulationEngine(num_robots=3, auto_start=False)
     app = create_app(sim)
     client = app.test_client()
 
     try:
         assert client.get("/api/health").status_code == 200
+        headers = csrf_headers(client)
 
-        start = client.post("/api/command", json={"command": "start_training"})
+        start = client.post("/api/command", json={"command": "start_training"}, headers=headers)
         assert start.status_code == 200, start.get_json()
 
         for _ in range(5):
-            step = client.post("/api/command", json={"command": "step"})
+            step = client.post("/api/command", json={"command": "step"}, headers=headers)
             assert step.status_code == 200
 
         status = client.get("/api/status")
@@ -46,13 +47,13 @@ def test_command_lifecycle_and_metrics_scrape():
         # Prometheus exposition format starts with a HELP line.
         assert re.search(r"^# HELP ", text, re.MULTILINE)
 
-        stop = client.post("/api/command", json={"command": "stop_training"})
+        stop = client.post("/api/command", json={"command": "stop_training"}, headers=headers)
         assert stop.status_code == 200
     finally:
         sim.shutdown()
 
 
-def test_rate_limiter_triggers_after_burst(monkeypatch):
+def test_rate_limiter_triggers_after_burst(monkeypatch, csrf_headers):
     monkeypatch.setenv("FL_ROBOTS_RATE_WINDOW_S", "60")
     monkeypatch.setenv("FL_ROBOTS_RATE_MAX_HITS", "3")
     # Reload to pick up the new env-derived defaults.
@@ -67,10 +68,11 @@ def test_rate_limiter_triggers_after_burst(monkeypatch):
     client = app.test_client()
 
     try:
+        headers = csrf_headers(client)
         for _ in range(3):
-            r = client.post("/api/command", json={"command": "step"})
+            r = client.post("/api/command", json={"command": "step"}, headers=headers)
             assert r.status_code == 200
-        over = client.post("/api/command", json={"command": "step"})
+        over = client.post("/api/command", json={"command": "step"}, headers=headers)
         assert over.status_code == 429
         assert over.get_json()["ok"] is False
     finally:

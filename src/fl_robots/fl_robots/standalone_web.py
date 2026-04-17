@@ -23,17 +23,24 @@ import hmac
 import json
 import logging
 import os
+import secrets
 import threading
 import time
+import uuid
 from collections import deque
 from pathlib import Path
 
-from flask import Flask, Response, jsonify, render_template, request
+from flask import Flask, Response, g, jsonify, render_template, request
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 from .controller import COMMAND_NAMES, CommandRequest
 from .observability.logging import configure_logging
-from .observability.metrics import REGISTRY, update_from_snapshot
+from .observability.metrics import (
+    REGISTRY,
+    fl_http_request_duration_seconds,
+    fl_http_requests_total,
+    update_from_snapshot,
+)
 from .observability.tracing import maybe_setup_tracing, span
 from .simulation import SimulationEngine
 
@@ -53,6 +60,9 @@ _RATE_MAX_HITS = int(os.environ.get("FL_ROBOTS_RATE_MAX_HITS", "30"))
 #: ``/api/ready`` returns 503. Keeps Kubernetes from serving traffic to a
 #: process whose background thread has hung.
 _READY_STALE_S = float(os.environ.get("FL_ROBOTS_READY_STALE_S", "5"))
+
+_CSRF_COOKIE_NAME = "fl_robots_csrf_token"
+_CSRF_HEADER_NAME = "X-CSRF-Token"
 
 
 def _parse_limit(raw: str | None) -> int | None:
@@ -187,6 +197,7 @@ OPENAPI_SCHEMA: dict = {
                         },
                     },
                     "401": {"description": "Missing/invalid bearer token"},
+                    "403": {"description": "Missing/invalid CSRF token"},
                     "429": {"description": "Rate limit exceeded"},
                 },
             }
@@ -331,6 +342,44 @@ def _check_auth() -> tuple[bool, str | None]:
     return True, None
 
 
+def _csrf_protection_enabled() -> bool:
+    """Use CSRF protection when mutating endpoints are open in dev mode."""
+    return not bool(os.environ.get(_AUTH_ENV_VAR, "").strip())
+
+
+def _check_csrf() -> tuple[bool, str | None]:
+    """Double-submit cookie check for mutating endpoints when auth is open."""
+    if not _csrf_protection_enabled():
+        return True, None
+    cookie_token = request.cookies.get(_CSRF_COOKIE_NAME, "").strip()
+    header_token = request.headers.get(_CSRF_HEADER_NAME, "").strip()
+    if not cookie_token or not header_token:
+        return False, "Missing CSRF token"
+    if not hmac.compare_digest(cookie_token.encode("utf-8"), header_token.encode("utf-8")):
+        return False, "Invalid CSRF token"
+    return True, None
+
+
+def _bind_request_context(request_id: str) -> None:
+    """Best-effort request-id propagation into structlog contextvars."""
+    try:
+        import structlog  # type: ignore
+
+        structlog.contextvars.bind_contextvars(request_id=request_id)
+    except ImportError:  # pragma: no cover - optional dependency
+        pass
+
+
+def _clear_request_context() -> None:
+    """Clear per-request structlog bindings if structlog is installed."""
+    try:
+        import structlog  # type: ignore
+
+        structlog.contextvars.clear_contextvars()
+    except ImportError:  # pragma: no cover - optional dependency
+        pass
+
+
 class _SlidingWindowRateLimiter:
     """Per-IP sliding-window rate limiter.
 
@@ -361,12 +410,13 @@ class _SlidingWindowRateLimiter:
 def create_app(simulation: SimulationEngine | None = None) -> Flask:
     """Create the standalone Flask application."""
     web_dir = Path(__file__).resolve().parent / "web"
+    seed = int(os.environ.get("FL_ROBOTS_SEED", "42"))
     app = Flask(
         __name__,
         template_folder=str(web_dir / "templates"),
         static_folder=str(web_dir / "static"),
     )
-    app.config["SIMULATION"] = simulation or SimulationEngine()
+    app.config["SIMULATION"] = simulation or SimulationEngine(seed=seed)
     limiter = _SlidingWindowRateLimiter(_RATE_WINDOW_S, _RATE_MAX_HITS)
     app.config["RATE_LIMITER"] = limiter
 
@@ -381,16 +431,24 @@ def create_app(simulation: SimulationEngine | None = None) -> Flask:
     # via FL_ROBOTS_CSP if you embed in a parent frame.
     _default_csp = (
         "default-src 'self'; "
-        "script-src 'self' 'unsafe-inline'; "
-        "style-src 'self' 'unsafe-inline'; "
+        "script-src 'self' https://cdn.jsdelivr.net; "
+        "style-src 'self'; "
         "img-src 'self' data:; "
         "connect-src 'self'; "
         "font-src 'self' data:; "
         "frame-ancestors 'none'; "
         "base-uri 'self'; "
-        "form-action 'self'"
+        "form-action 'self'; "
+        "object-src 'none'"
     )
     _csp = os.environ.get("FL_ROBOTS_CSP", _default_csp)
+
+    @app.before_request
+    def _request_setup() -> None:
+        g.request_started_at = time.perf_counter()
+        g.request_id = request.headers.get("X-Request-ID", "").strip() or str(uuid.uuid4())
+        g.csrf_token = request.cookies.get(_CSRF_COOKIE_NAME, "").strip() or secrets.token_urlsafe(32)
+        _bind_request_context(g.request_id)
 
     @app.after_request
     def _security_headers(response: Response) -> Response:
@@ -403,6 +461,28 @@ def create_app(simulation: SimulationEngine | None = None) -> Flask:
             "accelerometer=(), camera=(), geolocation=(), gyroscope=(), "
             "magnetometer=(), microphone=(), payment=(), usb=()",
         )
+        response.headers.setdefault("X-Request-ID", getattr(g, "request_id", str(uuid.uuid4())))
+        if _csrf_protection_enabled() and request.cookies.get(_CSRF_COOKIE_NAME) != getattr(
+            g, "csrf_token", None
+        ):
+            response.set_cookie(
+                _CSRF_COOKIE_NAME,
+                getattr(g, "csrf_token", secrets.token_urlsafe(32)),
+                httponly=False,
+                secure=request.is_secure,
+                samesite="Strict",
+                path="/",
+            )
+        path = request.url_rule.rule if request.url_rule is not None else request.path
+        method = request.method
+        status = str(response.status_code)
+        fl_http_requests_total.labels(path=path, method=method, status=status).inc()
+        started_at = getattr(g, "request_started_at", None)
+        if isinstance(started_at, (int, float)):
+            fl_http_request_duration_seconds.labels(path=path, method=method, status=status).observe(
+                max(0.0, time.perf_counter() - started_at)
+            )
+        _clear_request_context()
         return response
 
     @app.get("/")
@@ -441,6 +521,10 @@ def create_app(simulation: SimulationEngine | None = None) -> Flask:
         ok, reason = _check_auth()
         if not ok:
             return jsonify({"ok": False, "error": reason}), 401
+
+        ok, reason = _check_csrf()
+        if not ok:
+            return jsonify({"ok": False, "error": reason}), 403
 
         client_key = request.remote_addr or "anonymous"
         if not limiter.allow(client_key):

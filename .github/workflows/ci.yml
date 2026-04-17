@@ -42,6 +42,19 @@ jobs:
       - name: Mypy (package only)
         run: uv run mypy src/fl_robots/fl_robots
 
+  bandit:
+    name: Bandit security scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - name: Install project (core + dev)
+        run: uv sync --locked --extra dev
+      - name: Bandit
+        run: uv run bandit -q -c bandit.yaml -r src/fl_robots/fl_robots
+
   pyright:
     name: Pyright (advisory)
     runs-on: ubuntu-latest
@@ -166,7 +179,7 @@ jobs:
             source /opt/ros/humble/setup.bash &&
             source /ros2_ws/install/setup.bash &&
             cd /ros2_ws/src/fl_robots &&
-            python3 -m pytest test/ -v --tb=short || true
+            python3 -m pytest test/ -v --tb=short
           '
 
   benchmark:

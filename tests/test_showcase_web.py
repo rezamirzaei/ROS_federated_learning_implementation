@@ -178,10 +178,28 @@ def test_simulation_export_has_timestamp():
         sim.shutdown()
 
 
+def test_simulation_seed_makes_runs_reproducible():
+    sim_a = SimulationEngine(num_robots=3, auto_start=False, seed=123)
+    sim_b = SimulationEngine(num_robots=3, auto_start=False, seed=123)
+    try:
+        for _ in range(3):
+            sim_a.step_once()
+            sim_b.step_once()
+
+        snap_a = sim_a.snapshot()
+        snap_b = sim_b.snapshot()
+        assert snap_a["system"]["tick_count"] == snap_b["system"]["tick_count"]
+        assert snap_a["robots"] == snap_b["robots"]
+        assert snap_a["metrics"] == snap_b["metrics"]
+    finally:
+        sim_a.shutdown()
+        sim_b.shutdown()
+
+
 # ── Web routes ──────────────────────────────────────────────────────
 
 
-def test_web_routes_expose_status_and_validate_commands():
+def test_web_routes_expose_status_and_validate_commands(csrf_headers):
     simulation = SimulationEngine(num_robots=3, auto_start=False)
     app = create_app(simulation)
     client = app.test_client()
@@ -190,12 +208,15 @@ def test_web_routes_expose_status_and_validate_commands():
         status_response = client.get("/api/status")
         assert status_response.status_code == 200
         assert status_response.get_json()["system"]["robot_count"] == 3
+        headers = csrf_headers(client)
 
-        command_response = client.post("/api/command", json={"command": "step"})
+        command_response = client.post("/api/command", json={"command": "step"}, headers=headers)
         assert command_response.status_code == 200
         assert command_response.get_json()["ok"] is True
 
-        invalid_response = client.post("/api/command", json={"command": "unknown"})
+        invalid_response = client.post(
+            "/api/command", json={"command": "unknown"}, headers=headers
+        )
         assert invalid_response.status_code == 400
     finally:
         simulation.shutdown()
@@ -259,13 +280,13 @@ def test_web_results_endpoint():
         simulation.shutdown()
 
 
-def test_web_missing_command_returns_400():
+def test_web_missing_command_returns_400(csrf_headers):
     simulation = SimulationEngine(num_robots=2, auto_start=False)
     app = create_app(simulation)
     client = app.test_client()
 
     try:
-        resp = client.post("/api/command", json={})
+        resp = client.post("/api/command", json={}, headers=csrf_headers(client))
         assert resp.status_code == 400
         assert resp.get_json()["ok"] is False
     finally:

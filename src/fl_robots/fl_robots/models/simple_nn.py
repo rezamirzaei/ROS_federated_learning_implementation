@@ -17,8 +17,27 @@ __all__ = [
     "ObstacleAvoidanceNet",
     "SimpleNavigationNet",
     "compute_gradient_divergence",
+    "compute_weight_l2_drift",
     "federated_averaging",
 ]
+
+
+_NON_AGGREGATED_BUFFER_SUFFIXES = (
+    "running_mean",
+    "running_var",
+    "num_batches_tracked",
+)
+
+
+def _should_aggregate_weight_key(name: str) -> bool:
+    """Return True for trainable / aggregatable state entries.
+
+    FedAvg should merge learned parameters, but BatchNorm running statistics are
+    local client state (FedBN-style handling). Averaging them by sample-count
+    biases the estimate and ``num_batches_tracked`` is an integer buffer that
+    should never be fractionally averaged.
+    """
+    return not name.endswith(_NON_AGGREGATED_BUFFER_SUFFIXES)
 
 
 class SimpleNavigationNet(nn.Module):
@@ -116,6 +135,17 @@ class SimpleNavigationNet(nn.Module):
             weights[name] = tensor.detach().cpu().numpy()
         return weights
 
+    def get_trainable_weights(self) -> dict[str, np.ndarray]:
+        """Extract trainable parameters only.
+
+        This intentionally excludes BatchNorm running statistics so FL rounds
+        aggregate only learned weights and leave client-local BN buffers intact.
+        """
+        return {
+            name: param.detach().cpu().numpy()
+            for name, param in self.named_parameters()
+        }
+
     def set_weights(self, weights: dict[str, np.ndarray]):
         """
         Set model weights from numpy arrays.
@@ -209,6 +239,13 @@ class ObstacleAvoidanceNet(nn.Module):
             weights[name] = tensor.detach().cpu().numpy()
         return weights
 
+    def get_trainable_weights(self) -> dict[str, np.ndarray]:
+        """Extract trainable parameters only."""
+        return {
+            name: param.detach().cpu().numpy()
+            for name, param in self.named_parameters()
+        }
+
     def set_weights(self, weights: dict[str, np.ndarray]):
         state_dict = self.state_dict()
         for name, weight in weights.items():
@@ -244,15 +281,20 @@ def federated_averaging(
 
     # Use equal weights if sample_counts not provided
     if sample_counts is None:
-        sample_counts = [1] * n_clients
+        resolved_sample_counts = [1] * n_clients
+    else:
+        resolved_sample_counts = sample_counts
 
-    total_samples = sum(sample_counts)
-    client_weights = [count / total_samples for count in sample_counts]
+    total_samples = sum(resolved_sample_counts)
+    client_weights = [count / total_samples for count in resolved_sample_counts]
 
-    # Initialize averaged weights with a floating dtype so integer buffers
-    # (for example BatchNorm tracking counters) can participate safely.
+    aggregated_keys = [key for key in weights_list[0] if _should_aggregate_weight_key(key)]
+    if not aggregated_keys:
+        raise ValueError("weights_list does not contain any aggregatable parameters")
+
+    # Initialize averaged weights with a floating dtype.
     averaged_weights = {}
-    for key in weights_list[0].keys():
+    for key in aggregated_keys:
         dtype = np.result_type(*(weights[key].dtype for weights in weights_list), np.float32)
         averaged_weights[key] = np.zeros(weights_list[0][key].shape, dtype=dtype)
 
@@ -266,16 +308,19 @@ def federated_averaging(
     return averaged_weights
 
 
-def compute_gradient_divergence(
+def compute_weight_l2_drift(
     weights_list: list[dict[str, np.ndarray]], global_weights: dict[str, np.ndarray]
 ) -> list[float]:
     """
-    Compute gradient divergence between local and global models.
-    Useful for detecting non-IID data distribution.
+    Compute parameter-space L2 drift between local and global models.
+
+    Despite the legacy name used elsewhere in the codebase, this compares model
+    weights, not gradients. BatchNorm running-stat buffers are excluded for the
+    same reason they are excluded from FedAvg.
 
     Args:
         weights_list: List of local model weights
-        global_weights: Global model weights
+        global_weights: Global model weights / reference weights
 
     Returns:
         List of L2 distances from global model for each client
@@ -285,8 +330,19 @@ def compute_gradient_divergence(
     for local_weights in weights_list:
         total_diff = 0.0
         for key in global_weights:
+            if not _should_aggregate_weight_key(key):
+                continue
             diff = local_weights[key] - global_weights[key]
             total_diff += np.sum(diff**2)
         divergences.append(np.sqrt(total_diff))
 
     return divergences
+
+
+def compute_gradient_divergence(
+    weights_list: list[dict[str, np.ndarray]], global_weights: dict[str, np.ndarray]
+) -> list[float]:
+    """Backward-compatible alias for :func:`compute_weight_l2_drift`."""
+    return compute_weight_l2_drift(weights_list, global_weights)
+
+

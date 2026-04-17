@@ -312,6 +312,22 @@ button:hover,
     border-radius: 50%;
 }
 
+.twin-legend i.legend-swatch.leader {
+    background: #ff6b6b;
+}
+
+.twin-legend i.legend-swatch.robot {
+    background: #52b788;
+}
+
+.twin-legend i.legend-swatch.slot {
+    background: #ffd166;
+}
+
+.twin-legend i.legend-swatch.toa {
+    background: #c792ea;
+}
+
 .twin-legend i.star {
     background: #ffd166;
     clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);
@@ -324,6 +340,10 @@ button:hover,
 
 .fl-panel, .mpc-panel, .toa-panel {
     grid-column: 1 / -1;
+}
+
+.error-text {
+    color: var(--danger);
 }
 
 @media (max-width: 1080px) {

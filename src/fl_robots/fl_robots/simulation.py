@@ -31,6 +31,7 @@ from .sim_models import (
     TOAEstimatePoint,
     TOASnapshot,
 )
+from .utils.determinism import seed_everything
 
 if TYPE_CHECKING:  # pragma: no cover - typing-only import
     from .localization import (
@@ -63,6 +64,7 @@ class SimulationConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     num_robots: int = Field(default=4, ge=1, le=20, description="Number of simulated robots")
+    seed: int = Field(default=42, ge=0, le=2**31 - 1, description="Deterministic seed")
     tick_interval: float = Field(default=0.45, gt=0.0, le=5.0, description="Seconds between ticks")
     formation_radius: float = Field(default=1.4, gt=0.0, description="Initial formation radius")
     max_events: int = Field(default=300, ge=10, description="MessageBus event buffer size")
@@ -171,17 +173,22 @@ class SimulationEngine:
     _VALID_COMMANDS = frozenset(COMMAND_NAMES)
 
     def __init__(
-        self, num_robots: int = 4, tick_interval: float = 0.45, auto_start: bool = True
+        self,
+        num_robots: int = 4,
+        tick_interval: float = 0.45,
+        auto_start: bool = True,
+        seed: int = 42,
     ) -> None:
-        cfg = SimulationConfig(num_robots=num_robots, tick_interval=tick_interval)
+        cfg = SimulationConfig(num_robots=num_robots, tick_interval=tick_interval, seed=seed)
         self.cfg = cfg
+        seed_everything(cfg.seed)
         self.num_robots = cfg.num_robots
         self.tick_interval = cfg.tick_interval
         self._formation_radius = cfg.formation_radius
         self._lock = threading.RLock()
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
-        self._rng = random.Random(42)
+        self._rng = random.Random(cfg.seed)
         self.bus = MessageBus(max_events=cfg.max_events)
         self.planner: MPCPlanner = DistributedMPCPlanner()
         self.robots: dict[str, RobotState] = {}
@@ -225,7 +232,7 @@ class SimulationEngine:
         self._formation_slots: dict[str, tuple[float, float]] = {}
         #: Dedicated RNG for target respawns so captures are reproducible
         #: independent of the noise RNG.
-        self._target_rng = random.Random(1337)
+        self._target_rng = random.Random(cfg.seed + 1337)
         #: Recent capture events for UI / dashboards. Each entry is
         #: ``{"tick", "robot_id", "score", "target": {"x","y"}, "new_target": {"x","y"}}``.
         self.capture_events: deque[dict[str, Any]] = deque(maxlen=cfg.max_capture_history)
@@ -430,7 +437,7 @@ class SimulationEngine:
         self.last_aggregation = None
         self.capture_events.clear()
         self.total_captures = 0
-        self._target_rng = random.Random(1337)
+        self._target_rng = random.Random(self.cfg.seed + 1337)
         self._last_capturer = None
         self._capture_cooldown_until = 0
         self._capture_grace_until = 0

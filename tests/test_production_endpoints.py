@@ -90,7 +90,7 @@ def test_openapi_constant_matches_endpoint(paused_app):
 # ── Rate limiting ────────────────────────────────────────────────────
 
 
-def test_command_endpoint_is_rate_limited(paused_app, monkeypatch):
+def test_command_endpoint_is_rate_limited(paused_app, monkeypatch, csrf_headers):
     """Rapid bursts beyond the per-IP cap must return 429."""
     # Shrink the window so the test is fast and deterministic.
     from fl_robots import standalone_web
@@ -103,12 +103,13 @@ def test_command_endpoint_is_rate_limited(paused_app, monkeypatch):
     app = standalone_web.create_app(sim)
     try:
         client = app.test_client()
+        headers = csrf_headers(client)
 
         for _ in range(3):
-            rv = client.post("/api/command", json={"command": "step"})
+            rv = client.post("/api/command", json={"command": "step"}, headers=headers)
             assert rv.status_code == 200
 
-        rv = client.post("/api/command", json={"command": "step"})
+        rv = client.post("/api/command", json={"command": "step"}, headers=headers)
         assert rv.status_code == 429
         body = rv.get_json()
         assert body["ok"] is False

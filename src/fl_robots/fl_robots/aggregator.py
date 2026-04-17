@@ -32,6 +32,7 @@ import numpy as np
 
 from fl_robots.models import SimpleNavigationNet, compute_gradient_divergence, federated_averaging
 
+from .observability import metrics as observability_metrics
 from .ros_compat import (
     DurabilityPolicy,
     HistoryPolicy,
@@ -141,7 +142,7 @@ class AggregatorNode(BaseNode):  # type: ignore[misc,valid-type]
 
         # Global model (initialized when first robot registers)
         self.global_model = SimpleNavigationNet(input_dim=12, hidden_dim=64, output_dim=4)
-        self.global_weights = self.global_model.get_weights()
+        self.global_weights = self.global_model.get_trainable_weights()
 
         # Training history (bounded to prevent unbounded memory)
         self.aggregation_history: list[dict] = []
@@ -231,7 +232,7 @@ class AggregatorNode(BaseNode):  # type: ignore[misc,valid-type]
             """Configure: Initialize model, load any saved state."""
             self.get_logger().info("Lifecycle: on_configure() — loading global model")
             self.global_model = SimpleNavigationNet(input_dim=12, hidden_dim=64, output_dim=4)
-            self.global_weights = self.global_model.get_weights()
+            self.global_weights = self.global_model.get_trainable_weights()
             return TransitionCallbackReturn.SUCCESS
 
         def on_activate(self, state: LifecycleState) -> TransitionCallbackReturn:
@@ -574,6 +575,7 @@ class AggregatorNode(BaseNode):  # type: ignore[misc,valid-type]
             start_time = time.time()
             aggregated_weights = federated_averaging(weights_list, sample_counts)
             aggregation_time = time.time() - start_time
+            observability_metrics.fl_fedavg_aggregation_duration_seconds.observe(aggregation_time)
 
             # Update global model
             self.global_weights = aggregated_weights

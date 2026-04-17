@@ -136,6 +136,10 @@ class QPMPCPlanner:
         self.slew_limit = qcfg.slew_limit
         self.terminal_weight = qcfg.terminal_weight
         self.neighbor_margin = qcfg.neighbor_margin
+        # Cached OSQP workspaces. Reusing the solver instance preserves the KKT
+        # factorisation, which is where OSQP's warm-start performance actually
+        # comes from. We rebuild only when the sparsity pattern changes.
+        self._solver_cache: dict[str, dict[str, Any]] = {}
         # Per-robot warm-start cache: previous primal solution ``u`` and dual
         # ``y``. Re-seeding OSQP with these typically cuts iteration count by
         # 3–5× once the formation has settled.
@@ -234,6 +238,27 @@ class QPMPCPlanner:
         return system, per_robot
 
     # ── Internals ────────────────────────────────────────────────────
+
+    def _nominal_ego_positions(
+        self, robot_id: str, x0: _np.ndarray, v_prev: _np.ndarray
+    ) -> list[_np.ndarray]:
+        """Roll out a nominal ego trajectory for keep-out linearisation.
+
+        Prefer the previous warm-started control sequence when available; fall
+        back to a constant-velocity rollout from the current measured velocity.
+        """
+        cached = self._warm_cache.get(robot_id)
+        if cached is not None and cached[0].shape == (2 * self.horizon,):
+            u_nominal = _np.clip(cached[0], -self.max_speed, self.max_speed)
+        else:
+            u_nominal = _np.tile(v_prev, self.horizon)
+
+        pos = x0.copy()
+        rollout: list[_np.ndarray] = []
+        for k in range(self.horizon):
+            pos = pos + self.dt * u_nominal[2 * k : 2 * k + 2]
+            rollout.append(pos.copy())
+        return rollout
 
     def _plan_robot(
         self,
@@ -338,21 +363,22 @@ class QPMPCPlanner:
         # so the QP stays feasible — the slew limit prevents it from
         # rushing into the chosen direction.
         safe = self.safe_distance + self.neighbor_margin
+        nominal_ego_positions = self._nominal_ego_positions(robot.robot_id, x0, v_prev)
         for other in all_robots:
             if other.robot_id == robot.robot_id:
                 continue
             pred: Any = predicted_neighbors.get(other.robot_id)
-            offset0 = x0 - _np.array([other.pose.x, other.pose.y])
-            dist0 = float(_np.linalg.norm(offset0))
-            if dist0 < 1e-6:
-                n_hat = _np.array([1.0, 0.0])
-            else:
-                n_hat = offset0 / dist0
             for k in range(N):
                 if pred and k < len(pred):
                     p_nbr = _np.array([pred[k].x, pred[k].y])
                 else:
                     p_nbr = _np.array([other.pose.x, other.pose.y])
+                offset_k = nominal_ego_positions[k] - p_nbr
+                dist_k = float(_np.linalg.norm(offset_k))
+                if dist_k < 1e-6:
+                    n_hat = _np.array([1.0, 0.0])
+                else:
+                    n_hat = offset_k / dist_k
                 # Row of S for step k picks out the first (k+1) velocity
                 # blocks; extract it directly to keep the row sparse-ish.
                 S_row = S[2 * k : 2 * k + 2, :]  # shape (2, 2N)
@@ -369,34 +395,58 @@ class QPMPCPlanner:
         ub = _np.asarray(u_rows, dtype=float)
 
         # OSQP requires sparse CSC matrices and triu for P.
-        P_csc = sparse.csc_matrix(P)
+        P_csc = sparse.triu(sparse.csc_matrix(P)).tocsc()
         A_csc = sparse.csc_matrix(A)
 
-        prob = osqp.OSQP()
-        prob.setup(
-            P=P_csc,
-            q=q,
-            A=A_csc,
-            l=lb,
-            u=ub,
-            verbose=False,
-            eps_abs=1e-4,
-            eps_rel=1e-4,
-            max_iter=400,
+        prob: Any | None = None
+        cache = self._solver_cache.get(robot.robot_id)
+        cache_matches = bool(
+            cache
+            and cache.get("a_shape") == A_csc.shape
+            and cache.get("a_nnz") == A_csc.nnz
+            and cache.get("p_nnz") == P_csc.nnz
         )
+        if cache_matches:
+            prob = cache["solver"]
+            try:
+                prob.update(Px=P_csc.data, Ax=A_csc.data, q=q, l=lb, u=ub)
+            except Exception:  # pragma: no cover - defensive fallback
+                cache_matches = False
+                self._solver_cache.pop(robot.robot_id, None)
+
+        if not cache_matches:
+            prob = osqp.OSQP()
+            prob.setup(
+                P=P_csc,
+                q=q,
+                A=A_csc,
+                l=lb,
+                u=ub,
+                verbose=False,
+                eps_abs=1e-4,
+                eps_rel=1e-4,
+                max_iter=400,
+            )
+            self._solver_cache[robot.robot_id] = {
+                "solver": prob,
+                "a_shape": A_csc.shape,
+                "a_nnz": A_csc.nnz,
+                "p_nnz": P_csc.nnz,
+            }
 
         # Warm-start from the previous tick's primal/dual if available.
-        # OSQP's ADMM iterates converge dramatically faster near the
-        # previous optimum when the formation is tracking steadily.
-        # NOTE: only reuse the primal — dual shapes depend on the
-        # inequality count, which changes with the neighbour count.
+        # OSQP's ADMM iterates converge dramatically faster near the previous
+        # optimum when the formation is tracking steadily.
         cached = self._warm_cache.get(robot.robot_id)
         if cached is not None:
-            prev_u, _prev_y = cached
-            if prev_u.shape == (2 * N,):
+            prev_u, prev_y = cached
+            if prob is not None and prev_u.shape == (2 * N,):
                 prev_u = _np.clip(prev_u, -self.max_speed, self.max_speed)
                 try:
-                    prob.warm_start(x=prev_u)
+                    if prev_y.shape == (A_csc.shape[0],):
+                        prob.warm_start(x=prev_u, y=prev_y)
+                    else:
+                        prob.warm_start(x=prev_u)
                 except Exception:  # pragma: no cover - defensive
                     pass
 

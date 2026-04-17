@@ -21,6 +21,9 @@ __all__ = [
     "fl_avg_loss",
     "fl_best_accuracy",
     "fl_controller_state",
+    "fl_fedavg_aggregation_duration_seconds",
+    "fl_http_request_duration_seconds",
+    "fl_http_requests_total",
     "fl_mean_tracking_error",
     "fl_mpc_solve_time_ms",
     "fl_robot_count",
@@ -100,6 +103,28 @@ fl_round_latency_seconds = Histogram(
     registry=REGISTRY,
 )
 
+fl_fedavg_aggregation_duration_seconds = Histogram(
+    "fl_fedavg_aggregation_duration_seconds",
+    "Wall-clock latency of the FedAvg aggregation step itself.",
+    buckets=(0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0),
+    registry=REGISTRY,
+)
+
+fl_http_requests_total = Counter(
+    "fl_http_requests_total",
+    "Total number of standalone HTTP requests served.",
+    labelnames=("path", "method", "status"),
+    registry=REGISTRY,
+)
+
+fl_http_request_duration_seconds = Histogram(
+    "fl_http_request_duration_seconds",
+    "HTTP request latency for standalone endpoints.",
+    labelnames=("path", "method", "status"),
+    buckets=(0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5),
+    registry=REGISTRY,
+)
+
 # ── Control metrics ───────────────────────────────────────────────────
 
 fl_mean_tracking_error = Gauge(
@@ -175,8 +200,11 @@ def update_from_snapshot(snapshot: Mapping[str, Any]) -> None:
         _last_round_seen["timestamp"] = None
         previous_round = current_round
 
+    last_timestamp_seen = _last_round_seen["timestamp"]
     previous_timestamp = (
-        float(_last_round_seen["timestamp"]) if _last_round_seen["timestamp"] is not None else None
+        float(last_timestamp_seen)
+        if isinstance(last_timestamp_seen, (int, float))
+        else None
     )
     global_series = history.get("global")
     if isinstance(global_series, list):

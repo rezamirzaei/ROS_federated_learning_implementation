@@ -23,9 +23,9 @@ data:
   FL_ROBOTS_RATE_WINDOW_S: "10"
   FL_ROBOTS_RATE_MAX_HITS: "30"
   FL_ROBOTS_READY_STALE_S: "5"
-  # Tighten the shipped CSP further for your org (remove 'unsafe-inline'
-  # if/when the bundled JS/CSS is refactored to eliminate inline handlers).
-  # FL_ROBOTS_CSP: "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; frame-ancestors 'none'"
+  # Override the default CSP if your org wants to self-host third-party assets
+  # such as Chart.js instead of allowing jsdelivr in `script-src`.
+  # FL_ROBOTS_CSP: "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
 ---
 apiVersion: apps/v1
 kind: Deployment

@@ -34,6 +34,7 @@ def test_security_headers_present_on_index():
         assert resp.headers["X-Frame-Options"] == "DENY"
         assert resp.headers["X-Content-Type-Options"] == "nosniff"
         assert "frame-ancestors 'none'" in resp.headers["Content-Security-Policy"]
+        assert "'unsafe-inline'" not in resp.headers["Content-Security-Policy"]
     finally:
         sim.shutdown()
 
@@ -49,11 +50,11 @@ def test_security_headers_present_on_json_api():
         sim.shutdown()
 
 
-def test_security_headers_present_on_error_response():
+def test_security_headers_present_on_error_response(csrf_headers):
     """Even 4xx responses must carry the headers — they're user-facing."""
     sim, client = _client()
     try:
-        resp = client.post("/api/command", json={})
+        resp = client.post("/api/command", json={}, headers=csrf_headers(client))
         assert resp.status_code == 400
         for name in _EXPECTED_HEADERS:
             assert name in resp.headers, f"missing {name} on 400 response"

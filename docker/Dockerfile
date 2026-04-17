@@ -27,7 +27,10 @@ USER appuser
 
 EXPOSE 5000
 
-CMD ["python", "main.py", "run", "--host", "0.0.0.0", "--port", "5000"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/api/health', timeout=2)" || exit 1
+
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "2", "--threads", "8", "fl_robots.wsgi:app"]
 
 FROM standalone-runtime AS standalone-test
 

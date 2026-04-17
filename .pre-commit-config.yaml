@@ -25,3 +25,9 @@ repos:
         name: gitleaks (secrets scan)
         # Scans the staged diff; nightly CI runs a full-history scan.
         stages: [pre-commit]
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.8.0
+    hooks:
+      - id: bandit
+        args: ["-q", "-c", "bandit.yaml", "-r", "src/fl_robots/fl_robots"]
+        pass_filenames: false

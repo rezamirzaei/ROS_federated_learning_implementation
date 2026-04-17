@@ -15,6 +15,7 @@ import torch
 from fl_robots.models.simple_nn import (
     SimpleNavigationNet,
     compute_gradient_divergence,
+    compute_weight_l2_drift,
     federated_averaging,
 )
 
@@ -167,6 +168,30 @@ class TestFederatedAveraging:
 
         np.testing.assert_array_equal(averaged["layer1"], weights["layer1"])
 
+    def test_batch_norm_buffers_are_not_aggregated(self):
+        """FedAvg must leave BN running stats local instead of averaging them."""
+        weights1 = {
+            "fc1.weight": np.array([[1.0, 2.0]], dtype=np.float32),
+            "bn1.running_mean": np.array([10.0], dtype=np.float32),
+            "bn1.running_var": np.array([3.0], dtype=np.float32),
+            "bn1.num_batches_tracked": np.array(7, dtype=np.int64),
+        }
+        weights2 = {
+            "fc1.weight": np.array([[5.0, 6.0]], dtype=np.float32),
+            "bn1.running_mean": np.array([20.0], dtype=np.float32),
+            "bn1.running_var": np.array([9.0], dtype=np.float32),
+            "bn1.num_batches_tracked": np.array(21, dtype=np.int64),
+        }
+
+        averaged = federated_averaging([weights1, weights2], sample_counts=[3, 1])
+
+        np.testing.assert_array_almost_equal(
+            averaged["fc1.weight"], np.array([[2.0, 3.0]], dtype=np.float32)
+        )
+        assert "bn1.running_mean" not in averaged
+        assert "bn1.running_var" not in averaged
+        assert "bn1.num_batches_tracked" not in averaged
+
 
 class TestGradientDivergence:
     """Tests for gradient divergence computation."""
@@ -197,6 +222,15 @@ class TestGradientDivergence:
         assert len(divergences) == 2
         assert abs(divergences[0] - 1.0) < 1e-6
         assert abs(divergences[1] - 5.0) < 1e-6
+
+    def test_weight_l2_drift_alias_matches_legacy_name(self):
+        """The renamed helper should stay backward-compatible for callers/tests."""
+        global_weights = {"layer1": np.array([0.0, 0.0, 0.0])}
+        local_weights = [{"layer1": np.array([1.0, 0.0, 0.0])}]
+
+        assert compute_weight_l2_drift(local_weights, global_weights) == compute_gradient_divergence(
+            local_weights, global_weights
+        )
 
 
 class TestModelIntegration:

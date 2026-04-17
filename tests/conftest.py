@@ -19,3 +19,17 @@ def fake_ros() -> Iterator[FakeROSEnvironment]:
     """
     with FakeROSEnvironment() as env:
         yield env
+
+
+@pytest.fixture
+def csrf_headers():
+    """Return a helper that bootstraps the standalone app's CSRF cookie."""
+
+    def _factory(client) -> dict[str, str]:
+        client.get("/")
+        cookie = client.get_cookie("fl_robots_csrf_token")
+        assert cookie is not None, "expected CSRF cookie to be issued on GET /"
+        return {"X-CSRF-Token": cookie.value}
+
+    return _factory
+

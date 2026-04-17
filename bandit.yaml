@@ -1,0 +1,16 @@
+# Repository-local Bandit policy.
+# We keep the security scan on in CI, but suppress a few intentionally noisy
+# rules for this project:
+# - B101: asserts in smoke/demo code paths
+# - B104: standalone/dashboard bind-host defaults are documented and intentional
+# - B110: best-effort telemetry/tracing cleanup blocks
+# - B311: deterministic simulation RNGs / retry jitter are not security entropy
+skips:
+  - B101
+  - B104
+  - B110
+  - B311
+exclude_dirs:
+  - tests
+  - src/fl_robots/test
+

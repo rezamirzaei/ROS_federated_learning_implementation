@@ -57,17 +57,26 @@ def test_command_rejects_wrong_bearer(app_with_token):
     assert rv.status_code == 401
 
 
-def test_command_without_token_env_is_open(app_no_token):
+def test_command_without_token_env_requires_csrf(app_no_token):
     app, _ = app_no_token
     client = app.test_client()
     rv = client.post("/api/command", json={"command": "step"})
+    assert rv.status_code == 403
+
+
+def test_command_without_token_env_accepts_valid_csrf(app_no_token, csrf_headers):
+    app, _ = app_no_token
+    client = app.test_client()
+    rv = client.post("/api/command", json={"command": "step"}, headers=csrf_headers(client))
     assert rv.status_code == 200
 
 
-def test_metrics_endpoint_returns_prometheus_text(app_no_token):
+def test_metrics_endpoint_returns_prometheus_text(app_no_token, csrf_headers):
     app, sim = app_no_token
     sim.step_once()  # generate one tick so gauges are non-zero
     client = app.test_client()
+    client.get("/api/status")
+    client.post("/api/command", json={"command": "step"}, headers=csrf_headers(client))
     rv = client.get("/metrics")
     assert rv.status_code == 200
     body = rv.data.decode("utf-8")
@@ -79,6 +88,8 @@ def test_metrics_endpoint_returns_prometheus_text(app_no_token):
         "fl_controller_state",
         "fl_training_active",
         "fl_aggregation_divergence",
+        "fl_http_requests_total",
+        "fl_http_request_duration_seconds_bucket",
         "fl_tracking_error_bucket",
         "fl_mpc_solve_time_ms_bucket",
     ):
@@ -259,8 +270,10 @@ def test_qp_warm_start_does_not_regress_iterations():
     )
     planner.solve([robot], leader_position=(0.0, 0.0))
     cold_iters = planner.last_iterations["r0"]
+    first_solver = planner._solver_cache["r0"]["solver"]
     planner.solve([robot], leader_position=(0.0, 0.0))
     warm_iters = planner.last_iterations["r0"]
+    assert planner._solver_cache["r0"]["solver"] is first_solver
     assert warm_iters <= cold_iters, f"warm start regressed: cold={cold_iters}, warm={warm_iters}"
 
 
