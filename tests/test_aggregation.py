@@ -12,7 +12,6 @@ Tests cover:
 import numpy as np
 import pytest
 import torch
-
 from fl_robots.models.simple_nn import (
     SimpleNavigationNet,
     compute_gradient_divergence,
