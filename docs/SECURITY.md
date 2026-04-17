@@ -17,8 +17,9 @@ you do not control, you should at minimum:
 1. **Set a bearer token.** Export `FL_ROBOTS_API_TOKEN=<random string>`
    before launching the standalone dashboard. All mutating endpoints will
    then require `Authorization: Bearer <token>`.
-2. **Terminate TLS** in front of the Flask app (nginx, Caddy, Traefik, etc.).
-   The built-in Flask dev server is unencrypted and single-threaded.
+2. **Terminate TLS** in front of the dashboard (nginx, Caddy, Traefik, etc.).
+   The shipped standalone container now uses `gunicorn`, but it is still plain
+   HTTP by default and should sit behind a TLS reverse proxy.
 3. **Do not expose `/api/command`** to untrusted networks. It can reset
    simulation state, inject disturbances, and start/stop training.
 4. **Review the ROS QoS settings** in `aggregator.py` and
@@ -26,6 +27,9 @@ you do not control, you should at minimum:
    exchange uses `RELIABLE`+`TRANSIENT_LOCAL`. DDS security is not enabled
    by default; see the official ROS2 `sros2` tooling for production
    deployments.
+5. **Deploy immutable container references.** The Dockerfile now pins base
+   images by digest and uses locked `uv` installs, but deployment manifests
+   should also reference released image digests rather than mutable tags.
 
 ## Hardening checklist
 
@@ -33,10 +37,11 @@ you do not control, you should at minimum:
 * [ ] TLS reverse proxy in front of the Flask dashboard.
 * [ ] `FL_ROBOTS_JSON_LOGS=1` for ingestion-friendly audit logs.
 * [ ] Run the container as a non-root user (override the Dockerfile `USER`).
+* [ ] Deploy image digests instead of mutable tags in Kubernetes / Compose.
 * [ ] Use a persistent volume for the SQLite `MetricsStore` and back it up.
-* [ ] Keep dependencies patched — CI uses locked `uv sync` installs and runs
-      the benchmark smoke gate on PRs; security-sensitive updates should land
-      promptly.
+* [ ] Keep dependencies patched — CI uses locked `uv sync` installs, pinned
+      container base digests, image scans, and the benchmark smoke gate on PRs;
+      security-sensitive updates should land promptly.
 
 ## Secrets hygiene
 

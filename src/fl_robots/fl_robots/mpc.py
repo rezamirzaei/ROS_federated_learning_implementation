@@ -122,7 +122,7 @@ class DistributedMPCPlanner:
     def solve_with_refs(
         self,
         robots: list[RobotState],
-        refs: dict[str, list[tuple[float, float]]],
+        references: dict[str, list[tuple[float, float]]],
     ) -> dict[str, MPCPlan]:
         """Solve with per-robot, per-step reference trajectories.
 
@@ -139,7 +139,7 @@ class DistributedMPCPlanner:
         predicted_neighbors: dict[str, list[TrajectoryPoint]] = {}
 
         for robot in robots:
-            ref_seq = list(refs.get(robot.robot_id, ()))
+            ref_seq = list(references.get(robot.robot_id, ()))
             if not ref_seq:
                 ref_seq = [(robot.pose.x, robot.pose.y)]
             # Pad/truncate to exactly ``horizon`` entries.

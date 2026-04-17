@@ -57,3 +57,30 @@ jobs:
         with:
           sarif_file: trivy-image.sarif
 
+  ros-image-scan:
+    name: ROS runtime image scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build ROS runtime image for scanning
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          target: ros-runtime
+          tags: fl-robots-ros:scan
+          load: true
+          push: false
+      - name: Run Trivy ROS image scan
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          image-ref: fl-robots-ros:scan
+          format: sarif
+          output: trivy-ros-image.sarif
+          severity: CRITICAL,HIGH
+      - name: Upload Trivy ROS results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-ros-image.sarif
+

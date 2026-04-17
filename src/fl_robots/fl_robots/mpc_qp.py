@@ -42,6 +42,11 @@ if TYPE_CHECKING:  # pragma: no cover
 __all__ = ["OSQP_AVAILABLE", "QPMPCPlanner", "get_qp_planner"]
 
 
+ArrayLike = Any
+WarmStartEntry = tuple[ArrayLike, ArrayLike]
+SolverCacheEntry = dict[str, Any]
+
+
 # ``Any`` fallbacks keep PyCharm / pyright happy: they see ``_np.eye(...)``
 # and ``sparse.csc_matrix(...)`` as well-typed regardless of whether the
 # optional deps resolved, and runtime gating lives in ``get_qp_planner``.
@@ -139,11 +144,11 @@ class QPMPCPlanner:
         # Cached OSQP workspaces. Reusing the solver instance preserves the KKT
         # factorisation, which is where OSQP's warm-start performance actually
         # comes from. We rebuild only when the sparsity pattern changes.
-        self._solver_cache: dict[str, dict[str, Any]] = {}
+        self._solver_cache: dict[str, SolverCacheEntry] = {}
         # Per-robot warm-start cache: previous primal solution ``u`` and dual
         # ``y``. Re-seeding OSQP with these typically cuts iteration count by
         # 3–5× once the formation has settled.
-        self._warm_cache: dict[str, tuple[_np.ndarray, _np.ndarray]] = {}
+        self._warm_cache: dict[str, WarmStartEntry] = {}
         # Iteration stats for observability and tests.
         self.last_iterations: dict[str, int] = {}
         self.last_status: dict[str, str] = {}
@@ -171,7 +176,7 @@ class QPMPCPlanner:
     def solve_with_refs(
         self,
         robots: list[RobotState],
-        refs: dict[str, list[tuple[float, float]]],
+        references: dict[str, list[tuple[float, float]]],
     ) -> dict[str, MPCPlan]:
         """Solve with per-robot, per-step horizon-length references.
 
@@ -185,7 +190,7 @@ class QPMPCPlanner:
         plans: dict[str, MPCPlan] = {}
         predicted_neighbors: dict[str, list[TrajectoryPoint]] = {}
         for robot in robots:
-            ref_seq = list(refs.get(robot.robot_id, ()))
+            ref_seq = list(references.get(robot.robot_id, ()))
             if not ref_seq:
                 ref_seq = [(robot.pose.x, robot.pose.y)]
             if len(ref_seq) < self.horizon:
@@ -240,8 +245,8 @@ class QPMPCPlanner:
     # ── Internals ────────────────────────────────────────────────────
 
     def _nominal_ego_positions(
-        self, robot_id: str, x0: _np.ndarray, v_prev: _np.ndarray
-    ) -> list[_np.ndarray]:
+        self, robot_id: str, x0: ArrayLike, v_prev: ArrayLike
+    ) -> list[ArrayLike]:
         """Roll out a nominal ego trajectory for keep-out linearisation.
 
         Prefer the previous warm-started control sequence when available; fall
@@ -254,7 +259,7 @@ class QPMPCPlanner:
             u_nominal = _np.tile(v_prev, self.horizon)
 
         pos = x0.copy()
-        rollout: list[_np.ndarray] = []
+        rollout: list[ArrayLike] = []
         for k in range(self.horizon):
             pos = pos + self.dt * u_nominal[2 * k : 2 * k + 2]
             rollout.append(pos.copy())
@@ -406,17 +411,19 @@ class QPMPCPlanner:
             and cache.get("a_nnz") == A_csc.nnz
             and cache.get("p_nnz") == P_csc.nnz
         )
-        if cache_matches:
-            prob = cache["solver"]
+        if cache_matches and cache is not None:
+            solver = cache["solver"]
+            prob = solver
             try:
-                prob.update(Px=P_csc.data, Ax=A_csc.data, q=q, l=lb, u=ub)
+                solver.update(Px=P_csc.data, Ax=A_csc.data, q=q, l=lb, u=ub)
             except Exception:  # pragma: no cover - defensive fallback
                 cache_matches = False
                 self._solver_cache.pop(robot.robot_id, None)
 
         if not cache_matches:
-            prob = osqp.OSQP()
-            prob.setup(
+            assert osqp is not None
+            solver = osqp.OSQP()
+            solver.setup(
                 P=P_csc,
                 q=q,
                 A=A_csc,
@@ -427,8 +434,9 @@ class QPMPCPlanner:
                 eps_rel=1e-4,
                 max_iter=400,
             )
+            prob = solver
             self._solver_cache[robot.robot_id] = {
-                "solver": prob,
+                "solver": solver,
                 "a_shape": A_csc.shape,
                 "a_nnz": A_csc.nnz,
                 "p_nnz": P_csc.nnz,
@@ -450,6 +458,7 @@ class QPMPCPlanner:
                 except Exception:  # pragma: no cover - defensive
                     pass
 
+        assert prob is not None
         result = prob.solve()
         self.last_iterations[robot.robot_id] = int(getattr(result.info, "iter", 0))
         self.last_status[robot.robot_id] = str(getattr(result.info, "status", "unknown"))

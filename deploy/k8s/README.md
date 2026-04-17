@@ -8,6 +8,13 @@ Production-style manifests for the fl-robots standalone dashboard.
 kubectl apply -f deploy/k8s/standalone.yaml
 ```
 
+Before applying in any real environment, replace the mutable example image tag
+in `standalone.yaml` with a released digest, for example:
+
+```bash
+kubectl set image deployment/fl-robots fl-robots=ghcr.io/<org>/fl-robots-standalone@sha256:<digest> -n fl-robots
+```
+
 This provisions:
 
 - `Namespace` — `fl-robots`
@@ -27,6 +34,8 @@ This provisions:
 - All Linux capabilities dropped, no privilege escalation
 - Seccomp profile `RuntimeDefault`
 - No ServiceAccount token auto-mount
+- Docker bases are pinned by digest and Python deps are installed from the
+  checked-in `uv.lock`; keep the deployment image itself digest-pinned too.
 - Security headers layered on top (see `standalone_web.py::_security_headers`):
   CSP, X-Frame-Options: DENY, X-Content-Type-Options: nosniff,
   Referrer-Policy: no-referrer, Permissions-Policy tight-locked

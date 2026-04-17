@@ -56,16 +56,17 @@ jobs:
         run: uv run bandit -q -c bandit.yaml -r src/fl_robots/fl_robots
 
   pyright:
-    name: Pyright (advisory)
+    name: Pyright (standalone core)
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v3
         with:
           enable-cache: true
+      - name: Install project (core + dev + ml + qp)
       - run: uv sync --locked --extra dev --extra ml --extra qp
-      - run: uv run pyright
+      - name: Pyright
+        run: uv run pyright
 
   standalone-tests:
     name: Standalone tests (Python ${{ matrix.python-version }})

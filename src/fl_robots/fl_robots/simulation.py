@@ -134,6 +134,14 @@ class SimulationConfig(BaseModel):
             "target spawns after each capture."
         ),
     )
+    domain_bounds: float = Field(
+        default=3.5,
+        gt=0.0,
+        description=(
+            "Half-extent of the bounded game domain (±bounds in x and y). "
+            "Robot positions are clamped to this region every tick."
+        ),
+    )
     max_capture_history: int = Field(default=30, ge=0)
     capture_win_score: int = Field(
         default=5,
@@ -355,7 +363,7 @@ class SimulationEngine:
                             {"robot_id": r.robot_id, "score": r.capture_score}
                             for r in self.robots.values()
                         ),
-                        key=lambda e: (-e["score"], e["robot_id"]),
+                        key=lambda e: (-int(e["score"]), str(e["robot_id"])),
                     ),
                     "events": list(self.capture_events)[:20],
                 },
@@ -469,7 +477,12 @@ class SimulationEngine:
 
         # TOA estimator is recreated on reset so learnt dual variables don't
         # contaminate a fresh scenario. Skip quietly if NumPy isn't available.
-        if self.cfg.enable_localization and _TOA_AVAILABLE and DistributedTOAEstimator is not None:
+        if (
+            self.cfg.enable_localization
+            and _TOA_AVAILABLE
+            and DistributedTOAEstimator is not None
+            and TOAConfig is not None
+        ):
             self._toa_estimator = DistributedTOAEstimator(
                 robot_ids=list(self.robots),
                 config=TOAConfig(),
@@ -605,6 +618,10 @@ class SimulationEngine:
                 next_point.y,
                 _safe_atan2(plan.first_velocity[1], plan.first_velocity[0]),
             )
+            # Clamp robot positions to the bounded game domain.
+            b = self.cfg.domain_bounds
+            robot.pose.x = max(-b, min(b, robot.pose.x))
+            robot.pose.y = max(-b, min(b, robot.pose.y))
             robot.goal = (
                 planner_leader[0] + robot.formation_offset[0],
                 planner_leader[1] + robot.formation_offset[1],
@@ -816,8 +833,13 @@ class SimulationEngine:
           but we stop re-announcing the win.
         """
         if self.winner_id is not None:
-            # Match is over; keep running but don't re-emit wins.
-            return
+            # Auto-reset scores so the game continues indefinitely.
+            for robot in self.robots.values():
+                robot.capture_score = 0
+            self.winner_id = None
+            self._last_capturer = None
+            self._capture_cooldown_until = 0
+            self._capture_grace_until = self.tick_count + self.cfg.capture_grace_ticks + 5
         if self.tick_count < self._capture_grace_until:
             return
 
@@ -919,9 +941,12 @@ class SimulationEngine:
             robot.training_loss = max(
                 0.08, robot.training_loss - improvement_factor + (index * 0.002)
             )
-            robot.accuracy = min(
-                98.5, robot.accuracy + (1.4 - formation_error * 0.1) + safety_bonus
-            )
+            # Add stochastic noise to prevent monotonic overfitting —
+            # simulates real-world variance across local SGD rounds.
+            noise = self._rng.gauss(0.0, 0.3)
+            raw_acc = robot.accuracy + (1.4 - formation_error * 0.1) + safety_bonus + noise
+            # Clamp accuracy to [0, 98.5] — never negative, never perfect.
+            robot.accuracy = max(0.0, min(98.5, raw_acc))
 
             self.bus.publish(
                 f"/fl/{robot.robot_id}/model_weights",
@@ -938,7 +963,7 @@ class SimulationEngine:
             self.current_round += 1
             divergence = (formation_error * 0.35) + max(0.0, 0.8 - min_separation)
             mean_loss = sum(r.training_loss for r in self.robots.values()) / len(self.robots)
-            mean_accuracy = sum(r.accuracy for r in self.robots.values()) / len(self.robots)
+            mean_accuracy = max(0.0, sum(r.accuracy for r in self.robots.values()) / len(self.robots))
             record = AggregationRecord(
                 round_id=self.current_round,
                 participants=len(self.robots),
@@ -975,7 +1000,8 @@ class SimulationEngine:
             self.bus.publish("/fl/aggregation_metrics", "aggregator", record.as_dict())
 
     def _inject_disturbance_locked(self) -> None:
+        b = self.cfg.domain_bounds
         for robot in self.robots.values():
-            robot.pose.x += self._rng.uniform(-0.15, 0.15)
-            robot.pose.y += self._rng.uniform(-0.15, 0.15)
+            robot.pose.x = max(-b, min(b, robot.pose.x + self._rng.uniform(-0.15, 0.15)))
+            robot.pose.y = max(-b, min(b, robot.pose.y + self._rng.uniform(-0.15, 0.15)))
         self.controller_state = "RECOVERING"

@@ -83,6 +83,7 @@ dev = [
     "hypothesis>=6.100.0",
     "ruff>=0.7.0",
     "mypy>=1.10.0",
+    "pyright>=1.1.402",
     "types-requests",
 ]
 
@@ -222,7 +223,6 @@ module = [
     "torchvision.*",
     "numpy.*",
     "scipy.*",
-    "flask_cors.*",
     "flask_socketio.*",
     "osqp.*",
     "matplotlib.*",
@@ -237,7 +237,6 @@ ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = [
-    "fl_robots.observability.logging",
     "fl_robots.coordinator",
     "fl_robots.web_dashboard",
     "fl_robots.digital_twin",
@@ -249,5 +248,15 @@ check_untyped_defs = false
 ignore_errors = true
 
 [tool.pyright]
-include = ["main.py", "src", "tests"]
+# Required CI scope today: standalone/control modules that are available in the
+# default dev environment. ROS-heavy modules still rely on mypy + runtime tests
+# until the ros_compat surface is modeled more precisely for pyright.
+include = [
+    "src/fl_robots/fl_robots/observability/logging.py",
+    "src/fl_robots/fl_robots/mpc.py",
+    "src/fl_robots/fl_robots/mpc_qp.py",
+    "src/fl_robots/fl_robots/simulation.py",
+    "tests/test_mpc_observability.py",
+    "tests/test_web_and_qp.py",
+]
 extraPaths = ["src/fl_robots"]

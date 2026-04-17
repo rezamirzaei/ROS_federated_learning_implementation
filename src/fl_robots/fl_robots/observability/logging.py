@@ -12,6 +12,7 @@ from __future__ import annotations
 import logging
 import os
 import sys
+from typing import Any
 
 __all__ = ["configure_logging", "get_logger"]
 
@@ -53,7 +54,7 @@ def configure_logging(level: int | str | None = None, *, json_logs: bool | None 
 
     if structlog is not None and json_mode:
         timestamper = structlog.processors.TimeStamper(fmt="iso", utc=True)
-        shared_processors = [
+        shared_processors: list[Any] = [
             structlog.contextvars.merge_contextvars,
             structlog.processors.add_log_level,
             timestamper,

@@ -189,7 +189,7 @@ class DigitalTwinNode(Node):
                     if data.get("last_loss") is not None:
                         robot.loss = data["last_loss"]
                     if data.get("last_accuracy") is not None:
-                        robot.accuracy = data["last_accuracy"]
+                        robot.accuracy = max(0.0, min(100.0, data["last_accuracy"]))
 
         except Exception as e:
             self.get_logger().error(f"Error in robot status callback: {e}")
@@ -425,7 +425,7 @@ class DigitalTwinNode(Node):
 
         # Progress bar for average accuracy
         if state.robots:
-            avg_acc = sum(r.accuracy for r in state.robots.values()) / len(state.robots)
+            avg_acc = max(0.0, min(100.0, sum(r.accuracy for r in state.robots.values()) / len(state.robots)))
             ax2.text(
                 0.05,
                 0.2,

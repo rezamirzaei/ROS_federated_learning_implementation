@@ -20,21 +20,22 @@ The following findings are now considered **fixed** or **fixed enough to be remo
 - **NetworkPolicy added**: `deploy/k8s/networkpolicy.yaml` now restricts k8s traffic by default.
 - **Standalone reproducibility improved**: `SimulationEngine` now accepts a deterministic seed and `create_app()` honors `FL_ROBOTS_SEED`.
 - **ROS dashboard security largely aligned**: `web_dashboard.py`, `dashboard.html`, and `dashboard.js` now use CSRF-protected POSTs, stricter CSP, same-origin defaults, and no inline event handlers.
+- **Container supply chain tightened**: `docker/Dockerfile` now pins base images by digest, pins explicitly-installed apt packages, and installs Python dependencies from `uv.lock`; Trivy also scans the ROS runtime image.
 
 ### Overall score
 
-- **Unweighted mean across 14 sections:** **8.4 / 10**
-- **Weighted production-readiness score:** **8.1 / 10**
+- **Unweighted mean across 14 sections:** **8.5 / 10**
+- **Weighted production-readiness score:** **8.2 / 10**
 
 ### Current characterisation
 
 The project is now **clearly above “polished demo” quality** and has crossed into **credible pre-production engineering** for the standalone mode. The biggest remaining gaps are no longer the old P0 defects; they are now mostly:
 
-1. **Supply-chain hardening depth** (base-image digest pinning, apt version pinning, dependency-policy maturity).
-2. **Typing / CI strictness** (`mypy` remains intentionally relaxed, `pyright` is still advisory).
-3. **Deployment maturity** (no Helm chart / HPA, still a single main standalone manifest).
-4. **Scalability work left on the table** (per-robot QPs are still solved sequentially even though solver reuse is now fixed).
-5. **Advanced verification still missing** (mutation testing, OpenAPI fuzzing, broader ROS launch coverage).
+1. **Typing / CI strictness** (`mypy` remains intentionally relaxed, `pyright` is still advisory).
+2. **Deployment maturity** (no Helm chart / HPA, and the k8s manifest still uses a mutable application image tag by default).
+3. **Scalability work left on the table** (per-robot QPs are still solved sequentially even though solver reuse is now fixed).
+4. **Advanced verification still missing** (mutation testing, OpenAPI fuzzing, broader ROS launch coverage).
+5. **Last-mile supply-chain polish** (self-hosting remaining CDN assets and digest-pinning deployment manifests).
 
 ---
 
@@ -161,25 +162,25 @@ The project is now **clearly above “polished demo” quality** and has crossed
 - Add trace correlation and exemplars.
 - Bring the ROS dashboard path to the same observability standard.
 
-### 1.8 Security — **9.0 / 10**
+### 1.8 Security — **9.2 / 10**
 
 **Improved**
 - Bearer auth uses constant-time comparison.
 - Standalone mutating endpoints now have CSRF protection in open-auth mode.
 - Standalone CSP is materially stricter.
 - The ROS dashboard now also uses CSRF-protected POSTs, stricter CSP, same-origin defaults, and no inline event handlers/styles.
+- `docker/Dockerfile` now pins all base images by digest, pins the explicitly-installed apt packages, and installs Python dependencies from `uv.lock` via `uv sync --locked`.
 - CI now includes Bandit, CodeQL, Trivy, and dependency review.
+- Trivy now scans both the standalone and ROS runtime images.
 - k8s now includes a `NetworkPolicy`.
 
 **Why not 10**
-- Container images are still not digest-pinned.
-- apt packages are still not version-pinned.
 - The dashboard still depends on explicitly-whitelisted third-party CDNs (`cdn.jsdelivr.net`, `cdn.socket.io`) rather than fully self-hosted assets.
+- The deployment manifest still uses a mutable application image tag by default even though the underlying Docker bases are now immutable.
 
 **To reach 10**
-- Pin container base images by digest.
-- Pin apt package versions or move to a more locked-down base strategy.
 - Self-host the remaining third-party dashboard assets so CSP can become fully self-only.
+- Switch the k8s / release deployment examples to released application digests instead of mutable tags.
 
 ### 1.9 Performance & scalability — **7.8 / 10**
 
@@ -198,11 +199,12 @@ The project is now **clearly above “polished demo” quality** and has crossed
 - Prefer typed/binary weight transport when custom interfaces are available.
 - Add larger-client scaling benchmarks.
 
-### 1.10 DevOps / CI-CD — **8.7 / 10**
+### 1.10 DevOps / CI-CD — **8.9 / 10**
 
 **Improved**
 - CI now includes Bandit.
 - Dedicated `CodeQL`, `Trivy`, and `dependency-review` workflows are present.
+- Trivy now scans both container variants, not only the standalone image.
 - The nightly ROS launch test now fails correctly when broken.
 
 **Why not 10**
@@ -215,22 +217,22 @@ The project is now **clearly above “polished demo” quality** and has crossed
 - Add macOS ARM coverage.
 - Add repository settings-as-code / release automation polish.
 
-### 1.11 Deployment — **8.2 / 10**
+### 1.11 Deployment — **8.4 / 10**
 
 **Improved**
 - `docker/Dockerfile` now has a production WSGI path and health check.
 - `deploy/k8s/networkpolicy.yaml` closes a major deployment-security gap.
+- Container bases are now digest-pinned and Python installs are locked to `uv.lock`.
 
 **Why not 10**
 - Still no Helm chart or overlays.
 - No HPA.
-- Base images are still tag-pinned, not digest-pinned.
-- `deploy/k8s/standalone.yaml` is still the main deployment story.
+- `deploy/k8s/standalone.yaml` is still the main deployment story and still defaults to a mutable application image tag.
 
 **To reach 10**
 - Add Helm / Kustomize.
 - Add HPA.
-- Pin image digests.
+- Pin the deployed application image by digest in manifests/releases.
 
 ### 1.12 Documentation — **9.1 / 10**
 
@@ -283,9 +285,9 @@ The project is now **clearly above “polished demo” quality** and has crossed
 
 ## P0
 
-1. **Pin container/runtime supply chain inputs**
-   - Files: `docker/Dockerfile`
-   - Pin base images by digest and pin apt package versions where feasible.
+1. **Pin deployed application images in manifests/releases**
+   - Files: `deploy/k8s/standalone.yaml`, release docs/workflows
+   - The Dockerfile bases are already immutable; the last gap is the application image reference used by operators.
 
 ## P1
 
@@ -336,13 +338,14 @@ These are no longer open audit items:
 - missing NetworkPolicy
 - nightly ROS launch tests swallowing failures
 - ROS dashboard missing CSRF / stricter CSP / same-origin defaults
+- Docker base images and container Python installs not locked
 
 ### Findings still open
 
 The highest-value remaining issues are now:
 
 - strict typing / stronger CI enforcement
-- image digest / apt pinning
+- deployment image digest pinning
 - Helm / HPA / packaging maturity
 - sequential multi-robot QP solves
 - mutation/API fuzzing / broader ROS launch coverage
@@ -353,4 +356,4 @@ The highest-value remaining issues are now:
 
 This repository is no longer blocked by the original headline defects. The audit should now focus on **parity, hardening, and scale**, not on the old correctness bugs.
 
-If another pass is taken immediately, the best next target is **digest-pinning and supply-chain tightening in `docker/Dockerfile`**, followed by stricter type enforcement.
+If another pass is taken immediately, the best next target is **stricter type enforcement in `pyproject.toml` / CI**, followed by deployment image digest pinning in the Kubernetes manifest.

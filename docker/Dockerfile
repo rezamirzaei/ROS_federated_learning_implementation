@@ -1,21 +1,40 @@
 # syntax=docker/dockerfile:1.7
 
-FROM python:3.11-slim AS standalone-runtime
+ARG PYTHON_SLIM_DIGEST=sha256:ad65166ad2583036804a3f772ec8f1cad733cf77d631c6840ab1ea9231b6b350
+ARG ROS_HUMBLE_BASE_DIGEST=sha256:ec4ea4a624a8ea2aa3e304695731570cd47e4424980d7f00da4d172dc08a8625
+ARG ROS_HUMBLE_CORE_DIGEST=sha256:a115d56b8bbbfd9f7f95e3b8c40da8a677403521a514386ceb7bdc48e18a76aa
+ARG UV_VERSION=0.9.13
+ARG JAMMY_BASH_VERSION=5.1-6ubuntu1.1
+ARG JAMMY_PYTHON3_PIP_VERSION=22.0.2+dfsg-1ubuntu0.7
+ARG ROS_COLCON_EXTENSIONS_VERSION=0.3.0-100
+ARG ROS_RCLPY_VERSION=3.3.21-1jammy.20260310.163951
+ARG ROS_STD_MSGS_VERSION=4.9.1-1jammy.20260304.212507
+ARG ROS_GEOMETRY_MSGS_VERSION=4.9.1-1jammy.20260304.213757
+ARG ROS_SENSOR_MSGS_VERSION=4.9.1-1jammy.20260304.214918
+ARG ROS_LIFECYCLE_MSGS_VERSION=1.2.2-1jammy.20260304.211354
+ARG ROS_ROS2CLI_VERSION=0.18.18-1jammy.20260310.165616
+ARG ROS_ROS2LAUNCH_VERSION=0.19.13-1jammy.20260310.172117
+
+FROM python:3.11-slim@${PYTHON_SLIM_DIGEST} AS standalone-runtime
+
+ARG UV_VERSION
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1
+    PIP_NO_CACHE_DIR=1 \
+    UV_LINK_MODE=copy \
+    UV_PROJECT_ENVIRONMENT=/app/.venv \
+    PATH="/app/.venv/bin:${PATH}"
 
 WORKDIR /app
 
-COPY pyproject.toml README.md main.py /app/
+COPY pyproject.toml uv.lock README.md main.py /app/
 COPY src/fl_robots /app/src/fl_robots
 
-# Install CPU-only torch wheel plus the `ml` extra so the aggregation /
-# simple_nn code paths (and their tests) work inside the lightweight image.
-RUN python -m pip install --upgrade pip setuptools wheel && \
-    python -m pip install --extra-index-url https://download.pytorch.org/whl/cpu \
-        ".[ml]"
+# Install runtime deps from the locked resolver output rather than loose
+# pyproject ranges. This keeps the container supply chain aligned with CI.
+RUN python -m pip install --upgrade pip setuptools wheel "uv==${UV_VERSION}" && \
+    uv sync --locked --extra ml --no-dev --no-editable --python python
 
 # Drop privileges. All artefacts live under /app (writable by appuser) and
 # /tmp (world-writable). Avoids the "running containers as root" OWASP
@@ -36,26 +55,35 @@ FROM standalone-runtime AS standalone-test
 
 USER root
 COPY tests /app/tests
-RUN python -m pip install "pytest>=7.4.0" "pytest-cov>=4.1.0" && \
+RUN uv sync --locked --extra ml --extra dev --no-editable --python python && \
     chown -R appuser:appuser /app/tests
 USER appuser
 
 CMD ["python", "-m", "pytest", "tests/", "-v", "--tb=short"]
 
 # ── Stage 1: Build the ROS workspace ────────────────────────────────
-FROM ros:humble-ros-base AS ros-builder
+FROM ros:humble-ros-base@${ROS_HUMBLE_BASE_DIGEST} AS ros-builder
+
+ARG JAMMY_PYTHON3_PIP_VERSION
+ARG ROS_COLCON_EXTENSIONS_VERSION
+ARG ROS_RCLPY_VERSION
+ARG ROS_STD_MSGS_VERSION
+ARG ROS_GEOMETRY_MSGS_VERSION
+ARG ROS_SENSOR_MSGS_VERSION
+ARG ROS_LIFECYCLE_MSGS_VERSION
+ARG ROS_ROS2LAUNCH_VERSION
 
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3-pip \
-    python3-colcon-common-extensions \
-    ros-humble-rclpy \
-    ros-humble-std-msgs \
-    ros-humble-geometry-msgs \
-    ros-humble-sensor-msgs \
-    ros-humble-lifecycle-msgs \
-    ros-humble-ros2launch \
+    python3-pip=${JAMMY_PYTHON3_PIP_VERSION} \
+    python3-colcon-common-extensions=${ROS_COLCON_EXTENSIONS_VERSION} \
+    ros-humble-rclpy=${ROS_RCLPY_VERSION} \
+    ros-humble-std-msgs=${ROS_STD_MSGS_VERSION} \
+    ros-humble-geometry-msgs=${ROS_GEOMETRY_MSGS_VERSION} \
+    ros-humble-sensor-msgs=${ROS_SENSOR_MSGS_VERSION} \
+    ros-humble-lifecycle-msgs=${ROS_LIFECYCLE_MSGS_VERSION} \
+    ros-humble-ros2launch=${ROS_ROS2LAUNCH_VERSION} \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /ros2_ws
@@ -70,37 +98,47 @@ RUN /bin/bash -c "source /opt/ros/humble/setup.bash && \
 # ── Stage 2: Runtime image ──────────────────────────────────────────
 # ROS2 Humble targets Ubuntu 22.04, so the runtime image still needs an
 # Ubuntu/ROS base for ABI compatibility. We keep it lean by using ros-core.
-FROM ros:humble-ros-core AS ros-runtime
+FROM ros:humble-ros-core@${ROS_HUMBLE_CORE_DIGEST} AS ros-runtime
+
+ARG UV_VERSION
+ARG JAMMY_BASH_VERSION
+ARG JAMMY_PYTHON3_PIP_VERSION
+ARG ROS_RCLPY_VERSION
+ARG ROS_STD_MSGS_VERSION
+ARG ROS_GEOMETRY_MSGS_VERSION
+ARG ROS_SENSOR_MSGS_VERSION
+ARG ROS_LIFECYCLE_MSGS_VERSION
+ARG ROS_ROS2CLI_VERSION
+ARG ROS_ROS2LAUNCH_VERSION
 
 ENV DEBIAN_FRONTEND=noninteractive \
     ROS_DOMAIN_ID=42 \
     PIP_NO_CACHE_DIR=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    UV_LINK_MODE=copy \
+    UV_PROJECT_ENVIRONMENT=/app/.venv \
+    PATH="/app/.venv/bin:${PATH}"
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    bash \
-    python3-pip \
-    ros-humble-rclpy \
-    ros-humble-std-msgs \
-    ros-humble-geometry-msgs \
-    ros-humble-sensor-msgs \
-    ros-humble-lifecycle-msgs \
-    ros-humble-ros2cli \
-    ros-humble-ros2launch \
+    bash=${JAMMY_BASH_VERSION} \
+    python3-pip=${JAMMY_PYTHON3_PIP_VERSION} \
+    ros-humble-rclpy=${ROS_RCLPY_VERSION} \
+    ros-humble-std-msgs=${ROS_STD_MSGS_VERSION} \
+    ros-humble-geometry-msgs=${ROS_GEOMETRY_MSGS_VERSION} \
+    ros-humble-sensor-msgs=${ROS_SENSOR_MSGS_VERSION} \
+    ros-humble-lifecycle-msgs=${ROS_LIFECYCLE_MSGS_VERSION} \
+    ros-humble-ros2cli=${ROS_ROS2CLI_VERSION} \
+    ros-humble-ros2launch=${ROS_ROS2LAUNCH_VERSION} \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python runtime deps straight from pyproject.toml extras so there is
-# a SINGLE source of truth for pins — no drift between the ROS image and the
-# standalone image. We copy only the metadata files first to maximise layer
-# cache reuse.
+# Install Python runtime deps from the checked-in uv.lock so the ROS image and
+# standalone image consume the same locked Python dependency graph.
 WORKDIR /app
-COPY pyproject.toml README.md /app/
-COPY src/fl_robots/fl_robots/__init__.py /app/src/fl_robots/fl_robots/__init__.py
-RUN pip3 install --no-cache-dir --upgrade pip setuptools wheel && \
-    pip3 install --no-cache-dir \
-        --extra-index-url https://download.pytorch.org/whl/cpu \
-        ".[ml,ros]"
+COPY pyproject.toml uv.lock README.md /app/
+COPY src/fl_robots /app/src/fl_robots
+RUN pip3 install --no-cache-dir --upgrade pip setuptools wheel "uv==${UV_VERSION}" && \
+    uv sync --locked --extra ml --extra ros --no-dev --no-editable --python /usr/bin/python3
 
 WORKDIR /ros2_ws
 

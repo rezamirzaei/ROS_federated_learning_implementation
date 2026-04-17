@@ -3,9 +3,10 @@
 # Apply with:
 #   kubectl apply -f deploy/k8s/
 #
-# Requires a built & pushed image; the default tag here targets the image
-# produced by the `docker-standalone` CI job. Override with:
-#   kubectl set image deployment/fl-robots fl-robots=ghcr.io/<org>/fl-robots:<tag>
+# Requires a built & pushed image. In real environments, replace the mutable
+# example image below with a released digest, e.g.:
+#   kubectl set image deployment/fl-robots \
+#     fl-robots=ghcr.io/<org>/fl-robots-standalone@sha256:<digest>
 ---
 apiVersion: v1
 kind: Namespace
@@ -66,7 +67,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: fl-robots
-          image: ghcr.io/rezami/fl-robots-standalone:latest
+          image: ghcr.io/rezami/fl-robots-standalone:latest # replace with a digest before production use
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
