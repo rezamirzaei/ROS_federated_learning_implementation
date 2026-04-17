@@ -12,6 +12,16 @@ uv run python -m pytest tests/ -v
 uv run python scripts/benchmark.py --rounds 3
 ```
 
+If you prefer repo-local shortcuts over remembering the individual commands:
+
+```bash
+make install
+make lint
+make typecheck
+make test
+make bench
+```
+
 ## Quality gates
 
 All of the following must pass locally before opening a PR. The same checks
@@ -22,6 +32,14 @@ uv run ruff check .
 uv run ruff format --check .
 uv run mypy src/fl_robots/fl_robots
 uv run pytest tests/
+```
+
+Equivalent shortcut flow:
+
+```bash
+make lint
+make typecheck
+make test
 ```
 
 If you add a new module, please:
@@ -62,4 +80,3 @@ first line should be <= 72 chars.
 
 By contributing you agree that your contributions will be licensed under the
 MIT License (see `LICENSE`).
-

@@ -56,8 +56,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **Coverage gate 65 → 70 %**. Dropped ``web_dashboard.py`` and
-  ``scripts/benchmark.py`` from the coverage omit list.
+- **Coverage gate 65 → 70 %**. Expanded standalone coverage and test breadth;
+  ``web_dashboard.py`` and ``scripts/benchmark.py`` remain omitted from the
+  core coverage gate because they require optional/runtime-specific
+  dependencies.
 - ``pyproject.toml``: new ``otel`` optional-dep group.
 - ``pytest.ini_options.norecursedirs`` now excludes
   ``src/fl_robots/test`` so standalone pytest runs don't try to collect
@@ -110,5 +112,4 @@ Initial public release.
   `ros-builder`, `ros-runtime`) and `compose.yaml` with healthchecks.
 - GitHub Actions CI: lint, matrix tests (3.10/3.11/3.12), Docker build,
   ROS 2 workspace build, MNIST smoke benchmark.
-
 

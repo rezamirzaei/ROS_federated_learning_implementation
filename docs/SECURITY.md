@@ -34,8 +34,9 @@ you do not control, you should at minimum:
 * [ ] `FL_ROBOTS_JSON_LOGS=1` for ingestion-friendly audit logs.
 * [ ] Run the container as a non-root user (override the Dockerfile `USER`).
 * [ ] Use a persistent volume for the SQLite `MetricsStore` and back it up.
-* [ ] Keep dependencies patched — CI runs `uv lock` and benchmarks on every
-      PR; security-sensitive updates should land promptly.
+* [ ] Keep dependencies patched — CI uses locked `uv sync` installs and runs
+      the benchmark smoke gate on PRs; security-sensitive updates should land
+      promptly.
 
 ## Secrets hygiene
 
@@ -45,4 +46,3 @@ prevent committed secrets. Please install pre-commit locally:
 ```bash
 uv run pre-commit install
 ```
-

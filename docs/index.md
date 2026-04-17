@@ -6,9 +6,11 @@ docstrings via `mkdocstrings`) alongside the architecture and benchmark
 documents.
 
 - [Architecture](ARCHITECTURE.md)
+- [ADRs](adr/0001-dual-mode-ros-shim.md)
 - [Benchmarks](BENCHMARKS.md)
 - [Development](DEVELOPMENT.md)
+- [Observability](OBSERVABILITY.md)
+- [Runbook](RUNBOOK.md)
 - [SLO](SLO.md)
 - [Security](SECURITY.md)
 - [API Reference](api/standalone_web.md)
-

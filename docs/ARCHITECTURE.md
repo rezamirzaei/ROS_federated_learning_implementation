@@ -28,6 +28,67 @@ All ROS node modules import their ROS dependencies **only** via
 `fl_robots.message_bus.MessageBus` — a thread-safe, in-process pub/sub bus
 that mirrors ROS topic semantics.
 
+### C4 context
+
+```mermaid
+flowchart LR
+    operator["Operator / Researcher"]
+    browser["Browser dashboard client"]
+    repo["fl-robots system"]
+    ros["ROS 2 / DDS runtime"]
+    python["Standalone Python runtime"]
+    metrics["Prometheus / Grafana"]
+    bench["Benchmark + analysis tooling"]
+
+    operator --> browser
+    operator --> bench
+    browser --> repo
+    repo --> ros
+    repo --> python
+    repo --> metrics
+    bench --> repo
+```
+
+### C4 container view
+
+```mermaid
+flowchart TB
+    subgraph standalone["Standalone mode"]
+        web["standalone_web\nFlask + OpenAPI + metrics"]
+        sim["simulation\ntraining, MPC, TOA, capture"]
+        bus["message_bus\nin-process topic bus"]
+        web --> sim
+        sim <--> bus
+    end
+
+    subgraph ros_mode["ROS mode"]
+        agg["aggregator\nLifecycleNode"]
+        coord["coordinator\nround FSM"]
+        robot["robot_agent\nlocal SGD + TrainRound"]
+        mon["monitor\nartifacts + reports"]
+        twin["digital_twin\nmatplotlib renderer"]
+        dash["web_dashboard\nSocket.IO UI"]
+        agg <--> coord
+        coord <--> robot
+        agg --> mon
+        agg --> dash
+        robot --> mon
+        robot --> dash
+        coord --> dash
+        coord --> twin
+    end
+
+    compat["ros_compat\nreal rclpy or stubs"]
+    sqlite["persistence\nSQLite metrics store"]
+    planners["mpc / mpc_qp\npluggable planners"]
+
+    compat --- standalone
+    compat --- ros_mode
+    sim --> sqlite
+    agg --> sqlite
+    sim --> planners
+```
+
 ## Components (ROS mode)
 
 | Component       | Module                       | Kind            | Responsibilities |

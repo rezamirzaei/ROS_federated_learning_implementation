@@ -325,6 +325,21 @@ def test_robot_agent_history_truncation(fake_ros):
     assert node.accuracy_history[-1] == 11.0
 
 
+def test_synthetic_data_generator_seed_is_stable():
+    from fl_robots.robot_agent import SyntheticDataGenerator
+    from fl_robots.utils.determinism import derive_seed
+
+    seed = derive_seed("robot_7", 42)
+    gen_a = SyntheticDataGenerator("robot_7", seed=seed)
+    gen_b = SyntheticDataGenerator("robot_7", seed=seed)
+
+    X_a, y_a = gen_a.generate_batch(batch_size=8)
+    X_b, y_b = gen_b.generate_batch(batch_size=8)
+
+    assert np.array_equal(X_a, X_b)
+    assert np.array_equal(y_a, y_b)
+
+
 # ── aggregator edge cases ──────────────────────────────────────────────
 
 

@@ -34,7 +34,6 @@ updates:
           - "pytest*"
           - "ruff"
           - "mypy"
-          - "black"
           - "hypothesis"
 
   - package-ecosystem: "github-actions"
@@ -48,4 +47,3 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 2
-

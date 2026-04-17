@@ -34,7 +34,7 @@ jobs:
         with:
           enable-cache: true
       - name: Install project (core + dev + ml)
-        run: uv sync --extra dev --extra ml
+        run: uv sync --locked --extra dev --extra ml
       - name: Ruff lint
         run: uv run ruff check .
       - name: Ruff format --check
@@ -51,7 +51,7 @@ jobs:
       - uses: astral-sh/setup-uv@v3
         with:
           enable-cache: true
-      - run: uv sync --extra dev --extra ml --extra qp
+      - run: uv sync --locked --extra dev --extra ml --extra qp
       - run: uv run pyright
 
   standalone-tests:
@@ -69,7 +69,7 @@ jobs:
       - name: Set up Python
         run: uv python install ${{ matrix.python-version }}
       - name: Install project (core + dev + ml + viz + qp)
-        run: uv sync --extra dev --extra ml --extra viz --extra qp --python ${{ matrix.python-version }}
+        run: uv sync --locked --extra dev --extra ml --extra viz --extra qp --python ${{ matrix.python-version }}
       - name: Run pytest with coverage
         run: uv run --python ${{ matrix.python-version }} pytest tests/ -v --cov=fl_robots --cov-report=xml --cov-report=term
       - name: Upload coverage artifact
@@ -178,7 +178,7 @@ jobs:
       - uses: astral-sh/setup-uv@v3
         with:
           enable-cache: true
-      - run: uv sync --extra ml --extra dev
+      - run: uv sync --locked --extra ml --extra dev
       - name: Run 3-round smoke benchmark
         run: uv run python scripts/benchmark.py --rounds 3 --clients 4 --samples-per-client 400 --output results/ci_benchmark.json
       - name: Regression gate vs checked-in baseline
@@ -190,6 +190,5 @@ jobs:
         with:
           name: ci-benchmark
           path: results/ci_benchmark.json
-
 
 

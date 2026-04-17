@@ -19,6 +19,7 @@ Routes
 
 from __future__ import annotations
 
+import hmac
 import json
 import logging
 import os
@@ -323,7 +324,9 @@ def _check_auth() -> tuple[bool, str | None]:
         return True, None
     header = request.headers.get("Authorization", "")
     scheme, _, token = header.partition(" ")
-    if scheme.lower() != "bearer" or token.strip() != expected:
+    if scheme.lower() != "bearer":
+        return False, "Invalid or missing bearer token"
+    if not hmac.compare_digest(token.strip().encode("utf-8"), expected.encode("utf-8")):
         return False, "Invalid or missing bearer token"
     return True, None
 

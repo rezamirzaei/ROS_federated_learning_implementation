@@ -53,6 +53,7 @@ from .ros_compat import (
     Twist,
     rclpy,
 )
+from .utils.determinism import derive_seed, seed_everything
 
 # Try importing custom interfaces; fall back to String-based protocol
 try:
@@ -74,7 +75,7 @@ class SyntheticDataGenerator:
 
     def __init__(self, robot_id: str, seed: int | None = None):
         self.robot_id = robot_id
-        self.seed = seed or hash(robot_id) % 10000
+        self.seed = seed if seed is not None else derive_seed(robot_id, 0)
         self.rng = np.random.RandomState(self.seed)
         self.obstacle_bias = self.rng.uniform(-0.3, 0.3, size=8)
         self.goal_bias = self.rng.uniform(-0.2, 0.2, size=4)
@@ -177,6 +178,10 @@ class RobotAgentNode(Node):
         self.batch_size = self.get_parameter("batch_size").value
         self.local_epochs = self.get_parameter("local_epochs").value
         self.samples_per_round = self.get_parameter("samples_per_round").value
+        self.seed = int(self.get_parameter("seed").value)
+
+        seed_everything(self.seed)
+        data_seed = derive_seed(self.robot_id, self.seed)
 
         self.get_logger().info(f"Initializing Robot Agent: {self.robot_id}")
 
@@ -186,7 +191,7 @@ class RobotAgentNode(Node):
         self.criterion = nn.CrossEntropyLoss()
 
         # Data generator with robot-specific distribution
-        self.data_generator = SyntheticDataGenerator(self.robot_id)
+        self.data_generator = SyntheticDataGenerator(self.robot_id, seed=data_seed)
 
         # Training state
         self.is_training = False
@@ -317,6 +322,7 @@ class RobotAgentNode(Node):
         self.declare_parameter("batch_size", 32)
         self.declare_parameter("local_epochs", 5)
         self.declare_parameter("samples_per_round", 256)
+        self.declare_parameter("seed", 42)
 
     def _on_parameter_change(self, params):
         """Handle dynamic parameter changes at runtime."""

@@ -20,6 +20,8 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
+from fl_robots.utils.determinism import seed_everything
+
 # ── Lightweight argparse-only flow so `--help` works even if torch is missing.
 
 
@@ -213,7 +215,7 @@ def _fedavg_state_dicts(torch, state_dicts, weights):
 
 def run_benchmark(cfg: BenchmarkConfig) -> dict[str, Any]:
     torch = _load_torch()
-    torch.manual_seed(cfg.seed)
+    seed_everything(cfg.seed)
 
     # Deferred so `--help` works without torch.
     from fl_robots.data import FederatedMNISTConfig, make_federated_mnist

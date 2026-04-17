@@ -123,11 +123,6 @@ skip_covered = false
 # Minimum total coverage enforced in CI; ratchet up as we add tests.
 fail_under = 70
 
-[tool.black]
-line-length = 100
-target-version = ['py310']
-include = '\.pyi?$'
-
 [tool.ruff]
 line-length = 100
 target-version = "py310"

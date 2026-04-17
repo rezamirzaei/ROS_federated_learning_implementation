@@ -67,8 +67,15 @@ markdown_extensions:
 nav:
   - Overview: index.md
   - Architecture: ARCHITECTURE.md
+  - ADRs:
+      - ADR 0001 · Dual-mode ROS shim: adr/0001-dual-mode-ros-shim.md
+      - ADR 0002 · JSON string fallback protocol: adr/0002-json-string-fallback-protocol.md
+      - ADR 0003 · Planner pluggability: adr/0003-planner-pluggability.md
+      - ADR 0004 · Lifecycle vs plain node: adr/0004-lifecycle-vs-node.md
   - Benchmarks: BENCHMARKS.md
   - Development: DEVELOPMENT.md
+  - Observability: OBSERVABILITY.md
+  - Runbook: RUNBOOK.md
   - SLO: SLO.md
   - Security: SECURITY.md
   - API Reference:
@@ -78,4 +85,3 @@ nav:
       - Aggregator: api/aggregator.md
       - Robot agent: api/robot_agent.md
       - Observability: api/observability.md
-
