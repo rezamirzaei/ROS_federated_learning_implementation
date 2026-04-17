@@ -28,4 +28,3 @@ body:
         - label: New benchmark or FL algorithm (FedAvg / FedProx / …)
         - label: MPC / robotics change
         - label: Docs-only
-

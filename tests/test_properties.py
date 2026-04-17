@@ -15,12 +15,13 @@ from typing import Any
 
 import numpy as np
 import pytest
+from hypothesis import HealthCheck, assume, given, settings
+from hypothesis import strategies as st
+
 from fl_robots.message_bus import MessageBus
 from fl_robots.models.simple_nn import federated_averaging
 from fl_robots.mpc import DistributedMPCPlanner
 from fl_robots.sim_models import BusEvent, Pose2D, RobotState
-from hypothesis import HealthCheck, assume, given, settings
-from hypothesis import strategies as st
 
 # ── Hypothesis strategies ─────────────────────────────────────────────
 

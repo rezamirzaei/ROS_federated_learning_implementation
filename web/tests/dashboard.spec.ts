@@ -37,4 +37,3 @@ test.describe("dashboard smoke", () => {
     expect(bad.status()).toBe(400);
   });
 });
-

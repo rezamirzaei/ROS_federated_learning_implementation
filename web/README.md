@@ -30,4 +30,3 @@ FL_ROBOTS_BASE_URL=https://dash.example.com npm test
 Not wired into the default CI workflow by default (keeps PRs fast). Enable
 by adding a `frontend-smoke` job to `.github/workflows/ci.yml` that runs
 `npm ci && npm run install-browsers && npm test` inside `web/`.
-

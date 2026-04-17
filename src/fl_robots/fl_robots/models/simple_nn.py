@@ -204,7 +204,7 @@ class ObstacleAvoidanceNet(nn.Module):
 
     def _init_weights(self) -> None:
         for m in self.modules():
-            if isinstance(m, (nn.Conv2d, nn.Linear)):
+            if isinstance(m, nn.Conv2d | nn.Linear):
                 nn.init.xavier_uniform_(m.weight)
                 if m.bias is not None:
                     nn.init.zeros_(m.bias)

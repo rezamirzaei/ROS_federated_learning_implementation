@@ -18,4 +18,3 @@ int32 model_parameter_count
 float32 cpu_usage_percent
 float32 memory_usage_mb
 bool is_active
-

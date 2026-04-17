@@ -13,4 +13,3 @@ string robot_id
 float32 learning_rate
 int32 batch_size
 int32 local_epochs
-

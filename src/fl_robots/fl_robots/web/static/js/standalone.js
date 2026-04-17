@@ -516,4 +516,3 @@ initCharts();
 loadExplainer();
 refresh();
 window.setInterval(refresh, 1400);
-

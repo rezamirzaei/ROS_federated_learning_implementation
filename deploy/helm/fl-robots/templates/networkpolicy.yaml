@@ -16,4 +16,3 @@ spec:
   egress:
     - {}  # allow all egress by default; tighten per environment
 {{- end }}
-

@@ -11,4 +11,3 @@ float32 last_loss
 float32 last_accuracy
 string model_architecture           # JSON model description
 string training_history             # JSON training history
-

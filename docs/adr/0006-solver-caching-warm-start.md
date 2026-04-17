@@ -1,6 +1,6 @@
 # ADR-0006: OSQP Solver Caching and Warm-Start
 
-**Status:** Accepted  
+**Status:** Accepted
 **Date:** 2026-04-17
 
 ## Context
@@ -30,4 +30,3 @@ solution can cut iteration counts by 3–5×.
 - Typical solve time drops from ~2 ms to ~0.3 ms per robot after warm-up.
 - The cache is invalidated safely on shape mismatch; fallback is a full rebuild.
 - Thread-level parallelism scales to ~4 robots before Python overhead dominates.
-

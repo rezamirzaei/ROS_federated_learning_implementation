@@ -5,4 +5,3 @@ fl-robots
 {{- define "fl-robots.fullname" -}}
 {{ .Release.Name }}-fl-robots
 {{- end }}
-

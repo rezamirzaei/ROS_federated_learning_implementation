@@ -40,4 +40,3 @@ networkPolicy:
 podDisruptionBudget:
   enabled: true
   minAvailable: 0
-

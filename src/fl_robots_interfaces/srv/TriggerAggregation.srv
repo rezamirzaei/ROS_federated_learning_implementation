@@ -9,4 +9,3 @@ string message
 int32 round_number                  # The round that was aggregated
 int32 num_participants
 float32 mean_divergence
-

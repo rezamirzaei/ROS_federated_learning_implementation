@@ -32,4 +32,3 @@ float32 current_loss
 float32 current_accuracy
 float32 elapsed_seconds
 float32 estimated_remaining_seconds
-

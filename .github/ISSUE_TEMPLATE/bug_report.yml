@@ -51,4 +51,3 @@ body:
     attributes:
       label: Logs / stack traces
       render: text
-

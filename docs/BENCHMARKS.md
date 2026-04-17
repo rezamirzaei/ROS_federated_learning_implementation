@@ -74,4 +74,3 @@ test failures.
   `fl_robots.models.simple_nn.federated_averaging`, which operates on numpy
   state dicts and is covered by the FedAvg properties in
   `tests/test_properties.py`.
-

@@ -121,4 +121,3 @@ uv run python scripts/visualize.py results/my_benchmark.json
 3. `git tag vX.Y.Z && git push --tags`.
 4. GitHub Actions publishes PyPI + Docker images (when the release workflow
    is enabled).
-

@@ -62,4 +62,3 @@ The simulation engine is stateful (in-process `SimulationEngine` instance),
 so horizontal scaling is not meaningful — **keep `replicas: 1`**. For a real
 multi-tenant deployment, swap the in-memory state for an external store
 (Redis/Postgres) first.
-

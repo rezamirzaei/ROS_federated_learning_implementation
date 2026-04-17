@@ -10,4 +10,3 @@ spec:
     matchLabels:
       app.kubernetes.io/name: {{ include "fl-robots.name" . }}
 {{- end }}
-

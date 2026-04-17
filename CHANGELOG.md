@@ -112,4 +112,3 @@ Initial public release.
   `ros-builder`, `ros-runtime`) and `compose.yaml` with healthchecks.
 - GitHub Actions CI: lint, matrix tests (3.10/3.11/3.12), Docker build,
   ROS 2 workspace build, MNIST smoke benchmark.
-

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+
 from fl_robots.simulation import SimulationEngine
 
 

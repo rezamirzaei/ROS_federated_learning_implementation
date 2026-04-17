@@ -9,4 +9,3 @@ bool success
 string message
 int32 assigned_index               # Index in the federation
 int32 current_round                # Current global round number
-

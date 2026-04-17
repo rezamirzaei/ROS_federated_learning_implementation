@@ -90,6 +90,7 @@ def test_monitor_node_constructs_and_receives_status(fake_ros: Any, tmp_path: An
 def test_mnist_federated_dirichlet_partition_shapes() -> None:
     """The Dirichlet partition helper must produce disjoint shards per client."""
     import numpy as np
+
     from fl_robots.data.mnist_federated import _dirichlet_partition
 
     rng = np.random.default_rng(0)

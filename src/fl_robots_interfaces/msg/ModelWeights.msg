@@ -10,4 +10,3 @@ int32[] layer_sizes              # Size of each layer's weights (for reconstruct
 int32 total_samples              # Number of samples used in training
 float32 training_loss            # Loss after local training
 float32 training_accuracy        # Accuracy after local training
-

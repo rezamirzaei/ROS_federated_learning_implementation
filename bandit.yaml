@@ -13,4 +13,3 @@ skips:
 exclude_dirs:
   - tests
   - src/fl_robots/test
-

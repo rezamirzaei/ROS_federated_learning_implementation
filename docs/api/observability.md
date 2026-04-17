@@ -7,4 +7,3 @@
 ## Tracing
 
 ::: fl_robots.observability.tracing
-

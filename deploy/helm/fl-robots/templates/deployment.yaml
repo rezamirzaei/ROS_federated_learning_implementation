@@ -98,4 +98,3 @@ spec:
       name: http
   selector:
     app.kubernetes.io/name: {{ include "fl-robots.name" . }}
-

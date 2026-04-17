@@ -29,4 +29,3 @@ spec:
           port: 53
         - protocol: TCP
           port: 53
-

@@ -9,4 +9,3 @@ float32 accuracy
 float32 learning_rate
 int32 samples_processed
 float32 elapsed_seconds
-

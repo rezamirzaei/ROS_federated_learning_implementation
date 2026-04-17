@@ -1,6 +1,6 @@
 # ADR-0005: Standalone CSRF Strategy
 
-**Status:** Accepted  
+**Status:** Accepted
 **Date:** 2026-04-17
 
 ## Context
@@ -24,4 +24,3 @@ We implement a **double-submit cookie** CSRF pattern:
 - Zero-config local use is protected against CSRF without requiring a login flow.
 - The standalone JS bundle reads the cookie and attaches the header automatically.
 - Bearer-auth deployments are unaffected.
-

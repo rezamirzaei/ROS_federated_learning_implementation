@@ -424,6 +424,7 @@ def test_aggregator_tracking_stale_round_discards_weights(fake_ros: Any) -> None
 
 def test_simple_nn_flat_weights_roundtrip() -> None:
     import torch
+
     from fl_robots.models import SimpleNavigationNet
 
     model = SimpleNavigationNet(input_dim=6, hidden_dim=16, output_dim=3)

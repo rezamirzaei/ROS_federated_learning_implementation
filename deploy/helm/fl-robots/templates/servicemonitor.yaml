@@ -13,4 +13,3 @@ spec:
       path: /metrics
       interval: {{ .Values.serviceMonitor.interval }}
 {{- end }}
-

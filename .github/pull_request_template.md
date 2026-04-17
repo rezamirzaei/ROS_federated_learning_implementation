@@ -36,4 +36,3 @@ uv run python -m pytest -q
 ## Screenshots / traces
 
 <!-- Dashboard screenshots, Grafana panels, or perf traces if relevant. -->
-

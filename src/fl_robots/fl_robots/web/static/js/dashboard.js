@@ -388,4 +388,3 @@ setInterval(() => {
 
 // Initial fetch
 pollData();
-

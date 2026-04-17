@@ -1,6 +1,6 @@
 # ADR-0007: WSGI Serving via Gunicorn
 
-**Status:** Accepted  
+**Status:** Accepted
 **Date:** 2026-04-17
 
 ## Context
@@ -29,4 +29,3 @@ container health without requiring orchestrator probes.
 - Single-worker is intentional: the `SimulationEngine` holds mutable state.
   Scaling requires externalising state (Redis / Postgres) first.
 - The `wsgi.py` module provides a stable WSGI callable for any WSGI server.
-

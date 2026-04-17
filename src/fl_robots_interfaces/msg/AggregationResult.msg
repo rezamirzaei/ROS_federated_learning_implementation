@@ -9,4 +9,3 @@ float32 max_divergence
 string[] participant_ids
 float32[] participant_losses
 float32[] participant_accuracies
-

@@ -202,7 +202,7 @@ def update_from_snapshot(snapshot: Mapping[str, Any]) -> None:
 
     last_timestamp_seen = _last_round_seen["timestamp"]
     previous_timestamp = (
-        float(last_timestamp_seen) if isinstance(last_timestamp_seen, (int, float)) else None
+        float(last_timestamp_seen) if isinstance(last_timestamp_seen, int | float) else None
     )
     global_series = history.get("global")
     if isinstance(global_series, list):

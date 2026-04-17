@@ -95,7 +95,7 @@ build_image() {
     print_header "Building Docker Image"
 
     cd "$SCRIPT_DIR"
-    if [ "$mode" = "lite" ]; then
+    if [ "$mode" = "$LITE_PROFILE" ]; then
         print_msg "Building lightweight dashboard image..."
         "${COMPOSE_CMD[@]}" build dashboard
         print_msg "Build complete: $LITE_IMAGE_NAME"
@@ -115,7 +115,7 @@ start_containers() {
     cd "$SCRIPT_DIR"
     "${COMPOSE_CMD[@]}" down >/dev/null 2>&1 || true
 
-    if [ "$mode" = "lite" ]; then
+    if [ "$mode" = "$LITE_PROFILE" ]; then
         "${COMPOSE_CMD[@]}" up --build -d dashboard
         print_msg "Lightweight dashboard started at http://localhost:5000"
         print_msg "Use '$0 ros' for the full ROS multi-container stack."
@@ -245,7 +245,7 @@ main() {
         ""|run)
             print_header "FL-ROBOTS Docker"
             print_msg "Starting lightweight dashboard..."
-            start_containers "lite"
+            start_containers "$LITE_PROFILE"
             ;;
         help|--help|-h)
             echo "Usage: $0 [command]"

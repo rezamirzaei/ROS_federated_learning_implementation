@@ -35,4 +35,3 @@ the Prometheus metrics exposed on `/metrics` and alerted on by the rules in
 
 SLOs are reviewed quarterly. Adjustments land via a PR to this file and the
 Prometheus rules file.
-

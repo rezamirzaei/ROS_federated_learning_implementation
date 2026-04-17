@@ -480,7 +480,7 @@ def create_app(simulation: SimulationEngine | None = None) -> Flask:
         status = str(response.status_code)
         fl_http_requests_total.labels(path=path, method=method, status=status).inc()
         started_at = getattr(g, "request_started_at", None)
-        if isinstance(started_at, (int, float)):
+        if isinstance(started_at, int | float):
             fl_http_request_duration_seconds.labels(
                 path=path, method=method, status=status
             ).observe(max(0.0, time.perf_counter() - started_at))
