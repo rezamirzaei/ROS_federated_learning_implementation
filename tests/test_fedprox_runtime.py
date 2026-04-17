@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 
+import pytest
 import torch
 
 # ── Aggregator side ─────────────────────────────────────────────────────
@@ -207,3 +208,31 @@ def test_proximal_penalty_gradient_pulls_weights_toward_snapshot(fake_ros):
 
     after = _distance_squared()
     assert after < before, "proximal gradient step did not pull weights back"
+
+
+def test_proximal_penalty_rejects_missing_snapshot_params(fake_ros):
+    from fl_robots.robot_agent import RobotAgentNode
+
+    node = RobotAgentNode()
+    _broadcast_global(node, algorithm="fedprox", proximal_mu=0.2)
+
+    assert node._fl_global_snapshot is not None
+    missing_name = next(iter(node._fl_global_snapshot))
+    node._fl_global_snapshot.pop(missing_name)
+
+    with pytest.raises(RuntimeError, match="Invalid FedProx snapshot"):
+        node._proximal_penalty()
+
+
+def test_proximal_penalty_rejects_shape_mismatches(fake_ros):
+    from fl_robots.robot_agent import RobotAgentNode
+
+    node = RobotAgentNode()
+    _broadcast_global(node, algorithm="fedprox", proximal_mu=0.2)
+
+    assert node._fl_global_snapshot is not None
+    name, param = next(iter(node.model.named_parameters()))
+    node._fl_global_snapshot[name] = torch.zeros(param.numel() + 1)
+
+    with pytest.raises(RuntimeError, match="Invalid FedProx snapshot"):
+        node._proximal_penalty()

@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 
 import pytest
+from fl_robots.controller import COMMAND_NAMES
 from fl_robots.simulation import SimulationEngine
 from fl_robots.standalone_web import OPENAPI_SCHEMA, create_app
 
@@ -74,8 +75,9 @@ def test_openapi_schema_is_served_and_valid_structure(paused_app):
         assert path in schema["paths"], f"missing path in OpenAPI: {path}"
     # Command endpoint enumerates allowed values — guards against silent drift.
     allowed = schema["components"]["schemas"]["CommandRequest"]["properties"]["command"]["enum"]
-    assert "start_training" in allowed
-    assert "reset" in allowed
+    assert set(allowed) == set(COMMAND_NAMES)
+    assert "disturbance" in allowed
+    assert "trigger_disturbance" not in allowed
 
 
 def test_openapi_constant_matches_endpoint(paused_app):

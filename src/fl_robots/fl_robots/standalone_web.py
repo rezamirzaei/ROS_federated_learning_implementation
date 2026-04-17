@@ -30,7 +30,7 @@ from pathlib import Path
 from flask import Flask, Response, jsonify, render_template, request
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
-from .controller import CommandRequest
+from .controller import COMMAND_NAMES, CommandRequest
 from .observability.logging import configure_logging
 from .observability.metrics import REGISTRY, update_from_snapshot
 from .observability.tracing import maybe_setup_tracing, span
@@ -129,14 +129,7 @@ OPENAPI_SCHEMA: dict = {
                 "properties": {
                     "command": {
                         "type": "string",
-                        "enum": [
-                            "start_training",
-                            "stop_training",
-                            "reset",
-                            "step",
-                            "toggle_autopilot",
-                            "trigger_disturbance",
-                        ],
+                        "enum": list(COMMAND_NAMES),
                     },
                 },
             },
@@ -247,8 +240,63 @@ OPENAPI_SCHEMA: dict = {
         "/api/history/localization": {
             "get": {
                 "summary": "Distributed TOA localization history",
+                "description": (
+                    "Returns historical TOA estimates when localization is enabled. "
+                    "If the simulation was started without localization support, "
+                    "the endpoint still returns 200 with enabled=false and an empty series."
+                ),
                 "parameters": [{"name": "limit", "in": "query", "schema": {"type": "integer"}}],
-                "responses": {"200": {"description": "JSON series with target trajectory + RMSE"}},
+                "responses": {
+                    "200": {
+                        "description": "JSON series with target trajectory + RMSE",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": ["enabled", "series"],
+                                    "properties": {
+                                        "enabled": {"type": "boolean"},
+                                        "series": {
+                                            "type": "array",
+                                            "description": (
+                                                "TOA history points. Empty when localization "
+                                                "is disabled or no samples have been produced yet."
+                                            ),
+                                            "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "tick": {"type": "integer"},
+                                                    "timestamp": {"type": "number"},
+                                                    "target": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "x": {"type": "number"},
+                                                            "y": {"type": "number"},
+                                                        },
+                                                    },
+                                                    "estimates": {
+                                                        "type": "array",
+                                                        "items": {
+                                                            "type": "object",
+                                                            "properties": {
+                                                                "robot_id": {"type": "string"},
+                                                                "x": {"type": "number"},
+                                                                "y": {"type": "number"},
+                                                                "error": {"type": "number"},
+                                                            },
+                                                        },
+                                                    },
+                                                    "mean_rmse": {"type": "number"},
+                                                    "consensus_gap": {"type": "number"},
+                                                },
+                                            },
+                                        },
+                                    },
+                                }
+                            }
+                        },
+                    }
+                },
             }
         },
         "/api/mpc/explainer": {

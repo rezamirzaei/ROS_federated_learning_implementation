@@ -785,18 +785,36 @@ class RobotAgentNode(Node):
         has been received yet (cold start). Called from inside both
         training loops; designed to be a no-op on the hot path for
         FedAvg (see ``if snapshot is None: return None`` guard).
+
+        Raises ``RuntimeError`` if the stored FedProx snapshot is missing
+        trainable parameters or no longer matches the current model shape.
+        Partial regularisation would silently degrade the algorithm, so we
+        fail loudly instead of pretending FedProx is still applied.
         """
         snapshot = self._fl_global_snapshot
         mu = self._fl_proximal_mu
         if snapshot is None or mu <= 0.0 or self._fl_algorithm != "fedprox":
             return None
         prox: torch.Tensor | None = None
+        missing: list[str] = []
+        mismatched: list[str] = []
         for name, param in self.model.named_parameters():
             g = snapshot.get(name)
-            if g is None or g.shape != param.shape:
+            if g is None:
+                missing.append(name)
+                continue
+            if g.shape != param.shape:
+                mismatched.append(f"{name}: snapshot {tuple(g.shape)} != model {tuple(param.shape)}")
                 continue
             term = (param - g).pow(2).sum()
             prox = term if prox is None else prox + term
+        if missing or mismatched:
+            details: list[str] = []
+            if missing:
+                details.append(f"missing params [{', '.join(missing[:3])}]")
+            if mismatched:
+                details.append(f"shape mismatch [{'; '.join(mismatched[:3])}]")
+            raise RuntimeError(f"Invalid FedProx snapshot: {'; '.join(details)}")
         if prox is None:
             return None
         return 0.5 * mu * prox

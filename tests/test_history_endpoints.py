@@ -84,6 +84,19 @@ def test_history_localization_endpoint(client):
         assert "mean_rmse" in first
 
 
+def test_history_localization_endpoint_disabled_mode():
+    sim = SimulationEngine(num_robots=2, tick_interval=0.5, auto_start=False)
+    sim._toa_estimator = None
+    sim.toa_history.clear()
+    app = create_app(sim)
+    app.testing = True
+    with app.test_client() as c:
+        r = c.get("/api/history/localization")
+        assert r.status_code == 200
+        body = r.get_json()
+        assert body == {"enabled": False, "series": []}
+
+
 def test_mpc_explainer_endpoint(client):
     c, _ = client
     r = c.get("/api/mpc/explainer")
@@ -116,3 +129,7 @@ def test_openapi_lists_new_paths(client):
     assert "/api/history/mpc" in paths
     assert "/api/history/localization" in paths
     assert "/api/mpc/explainer" in paths
+    localization = paths["/api/history/localization"]["get"]
+    props = localization["responses"]["200"]["content"]["application/json"]["schema"]["properties"]
+    assert props["enabled"]["type"] == "boolean"
+    assert props["series"]["type"] == "array"

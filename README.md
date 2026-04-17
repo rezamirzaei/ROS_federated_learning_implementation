@@ -115,7 +115,7 @@ Once running, access the interactive dashboard at:
 
 Features:
 - 📊 Real-time coordinator, robot, and aggregation status
-- 🌐 Browser-based digital twin with predicted MPC horizons
+- 🌐 Browser-based digital twin with predicted MPC horizons and TOA overlays when localization is enabled
 - 📨 Live topic/message stream for commands, telemetry, and plans
 - 🎮 Start/stop training, step the world, toggle autopilot, inject disturbances
 - 📥 Download the current system snapshot as JSON
