@@ -2,10 +2,14 @@
 
 [![CI](https://img.shields.io/badge/CI-GitHub%20Actions-blue)](.github/workflows/ci.yml)
 [![ROS2](https://img.shields.io/badge/ROS2-Humble-blue)](https://docs.ros.org/en/humble/)
-[![Python](https://img.shields.io/badge/Python-3.10%E2%80%933.12-green)](https://python.org)
+[![Python](https://img.shields.io/badge/Python-3.10%E2%80%933.13-green)](https://python.org)
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.2-orange)](https://pytorch.org)
 [![Docker](https://img.shields.io/badge/Docker-Multi%E2%80%91stage-blue)](https://docker.com)
 [![License](https://img.shields.io/badge/License-MIT-lightgrey)](LICENSE)
+[![Coverage](https://img.shields.io/badge/coverage-%E2%89%A585%25-green)](pyproject.toml)
+[![pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit)](https://pre-commit.com)
+[![Typed](https://img.shields.io/badge/type--checked-mypy%20%2B%20pyright-blue)](pyproject.toml)
+[![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://docs.astral.sh/ruff/)
 
 A dual-mode ROS2 / standalone project demonstrating **distributed federated learning** across simulated robot agents. Runs **without ROS2** as a pure-Python simulation, or as a full ROS2 Humble system with custom interfaces, lifecycle nodes, and actions.
 
@@ -106,6 +110,14 @@ uv run python main.py run --manual
 > Socket.IO-based real-time dashboard (`flask-socketio`, `eventlet`) is
 > provided by the ROS2 `web_dashboard` node and is installed via the
 > `--extra ros` extra, which the `./run.sh ros` Docker profile uses.
+
+### Production Serving
+
+```bash
+# Gunicorn behind a reverse proxy (configure via env vars)
+FL_ROBOTS_NUM_ROBOTS=6 FL_ROBOTS_SEED=42 \
+  gunicorn --bind 0.0.0.0:5000 --workers 2 --threads 8 fl_robots.wsgi:app
+```
 
 ### Web Dashboard
 
@@ -273,7 +285,12 @@ backward compatibility).
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)   | Dual-mode design, component map, sequence diagrams, extension points. |
 | [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md)       | Reproducible FedAvg benchmarks on MNIST with Dirichlet non-IID splits. |
 | [`docs/SECURITY.md`](docs/SECURITY.md)           | Threat model, hardening checklist, responsible disclosure. |
-| [`CONTRIBUTING.md`](CONTRIBUTING.md)             | How to develop, test, and extend the project. |
+| [`docs/OBSERVABILITY.md`](docs/OBSERVABILITY.md) | Prometheus metrics, OpenTelemetry tracing, Grafana setup. |
+| [`docs/RUNBOOK.md`](docs/RUNBOOK.md)             | Operational runbook: alerts, troubleshooting, scaling. |
+| [`docs/SLO.md`](docs/SLO.md)                     | Service-level objectives and error budgets. |
+| [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md)     | Local dev setup, coding standards, PR workflow. |
+| [`docs/adr/`](docs/adr/)                         | Architecture Decision Records (ADR-0001 through ADR-0007). |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md)              | How to develop, test, and extend the project. |
 | [`docs/grafana-dashboard.json`](docs/grafana-dashboard.json) | Import-ready Grafana dashboard for the `/metrics` endpoint. |
 
 ## 📖 References

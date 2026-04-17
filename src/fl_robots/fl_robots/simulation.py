@@ -264,6 +264,10 @@ class SimulationEngine:
     # ── Lifecycle ────────────────────────────────────────────────────
 
     def start(self) -> None:
+        """Start the background simulation loop thread.
+
+        No-op if the thread is already running.
+        """
         if self._thread and self._thread.is_alive():
             return
         self._stop_event.clear()
@@ -271,6 +275,7 @@ class SimulationEngine:
         self._thread.start()
 
     def shutdown(self) -> None:
+        """Signal the simulation loop to stop and join the thread."""
         self._stop_event.set()
         if self._thread and self._thread.is_alive():
             self._thread.join(timeout=2.0)
@@ -294,12 +299,14 @@ class SimulationEngine:
         self.bus.publish("/system/command", "web-ui", {"command": command})
 
     def step_once(self) -> None:
+        """Execute a single simulation tick (thread-safe)."""
         with self._lock:
             self._tick_locked()
 
     # ── Snapshots / Export ───────────────────────────────────────────
 
     def snapshot(self) -> dict[str, Any]:
+        """Return a complete JSON-serialisable snapshot of the simulation state."""
         with self._lock:
             robots = [robot.as_dict() for robot in self.robots.values()]
             avg_loss = sum(r.training_loss for r in self.robots.values()) / max(len(self.robots), 1)
@@ -373,6 +380,7 @@ class SimulationEngine:
             }
 
     def export_results(self) -> dict[str, Any]:
+        """Return the current snapshot augmented with an ``exported_at`` timestamp."""
         snapshot = self.snapshot()
         snapshot["exported_at"] = time.time()
         return snapshot

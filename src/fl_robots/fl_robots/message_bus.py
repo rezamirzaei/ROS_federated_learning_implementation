@@ -46,6 +46,7 @@ class MessageBus:
                 return False
 
     def publish(self, topic: str, source: str, payload: Mapping[str, Any]) -> BusEvent:
+        """Publish an event to *topic*, notifying all matching subscribers and wildcards."""
         event = BusEvent(timestamp=time.time(), topic=topic, source=source, payload=dict(payload))
         with self._lock:
             self._events.append(event)
@@ -62,6 +63,7 @@ class MessageBus:
         return event
 
     def recent_events(self, limit: int = 50) -> list[BusEvent]:
+        """Return the last *limit* events from the ring buffer."""
         with self._lock:
             return list(self._events)[-limit:]
 

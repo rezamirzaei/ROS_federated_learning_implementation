@@ -1,7 +1,7 @@
 # See https://pre-commit.com for documentation.
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.7.4
+    rev: v0.11.6
     hooks:
       - id: ruff
         args: [--fix]
@@ -13,11 +13,14 @@ repos:
       - id: end-of-file-fixer
       - id: check-yaml
       - id: check-toml
+      - id: check-json
       - id: check-added-large-files
         args: [--maxkb=500]
       - id: check-merge-conflict
       - id: debug-statements
       - id: mixed-line-ending
+      - id: no-commit-to-branch
+        args: [--branch, main]
   - repo: https://github.com/gitleaks/gitleaks
     rev: v8.21.2
     hooks:
@@ -46,3 +49,11 @@ repos:
     hooks:
       - id: yamllint
         args: ["-d", "relaxed"]
+  - repo: local
+    hooks:
+      - id: mypy
+        name: mypy (type-check)
+        entry: uv run mypy src/fl_robots/fl_robots
+        language: system
+        pass_filenames: false
+        types: [python]

@@ -144,6 +144,7 @@ class MetricsStore:
         accuracy: float | None = None,
         tracking_error: float | None = None,
     ) -> None:
+        """Persist a per-robot metric row (loss, accuracy, tracking error)."""
         with self._cursor() as cur:
             cur.execute(
                 """
@@ -155,6 +156,7 @@ class MetricsStore:
             )
 
     def record_event(self, topic: str, source: str, payload: dict[str, Any]) -> None:
+        """Persist a bus event (topic, source, JSON payload)."""
         with self._cursor() as cur:
             cur.execute(
                 """
@@ -167,6 +169,7 @@ class MetricsStore:
     # ── Readers ──────────────────────────────────────────────────────
 
     def fetch_rounds(self, *, limit: int = 100) -> list[dict[str, Any]]:
+        """Return the most recent aggregation rounds (newest first)."""
         with self._cursor() as cur:
             cur.execute(
                 """
@@ -185,6 +188,7 @@ class MetricsStore:
         *,
         limit: int = 100,
     ) -> list[dict[str, Any]]:
+        """Return the most recent metrics for a given robot (newest first)."""
         with self._cursor() as cur:
             cur.execute(
                 """
@@ -199,6 +203,7 @@ class MetricsStore:
     # ── Lifecycle ────────────────────────────────────────────────────
 
     def close(self) -> None:
+        """Close the underlying SQLite connection."""
         with self._lock:
             try:
                 self._conn.close()
