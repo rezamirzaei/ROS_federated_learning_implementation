@@ -37,9 +37,6 @@ from .sim_models import (
     TrajectoryPoint,
 )
 
-if TYPE_CHECKING:  # pragma: no cover
-    pass
-
 __all__ = ["OSQP_AVAILABLE", "QPMPCPlanner", "get_qp_planner"]
 
 
@@ -216,10 +213,7 @@ class QPMPCPlanner:
         # threading gives real parallelism for the numerical work.
         n_workers = min(len(robot_refs), 4) or 1
         with ThreadPoolExecutor(max_workers=n_workers) as pool:
-            futures = [
-                pool.submit(_solve_one, robot, ref_seq)
-                for robot, ref_seq in robot_refs
-            ]
+            futures = [pool.submit(_solve_one, robot, ref_seq) for robot, ref_seq in robot_refs]
             for fut in futures:
                 rid, plan, elapsed = fut.result()
                 plans[rid] = plan
@@ -233,19 +227,18 @@ class QPMPCPlanner:
         self, tick: int, robots: list[RobotState]
     ) -> tuple[MPCSystemDiagnostic, list[MPCRobotDiagnostic]]:
         """Return last-solve diagnostics tagged with ``tick``."""
-        per_robot: list[MPCRobotDiagnostic] = []
-        for robot in robots:
-            per_robot.append(
-                MPCRobotDiagnostic(
-                    tick=tick,
-                    robot_id=robot.robot_id,
-                    tracking_error=self.last_tracking_error.get(robot.robot_id, 0.0),
-                    control_effort=self.last_control_effort.get(robot.robot_id, 0.0),
-                    qp_iterations=int(self.last_iterations.get(robot.robot_id, 0)),
-                    qp_solve_time_ms=self.last_solve_time_ms.get(robot.robot_id, 0.0),
-                    qp_status=self.last_status.get(robot.robot_id, "unknown"),
-                )
+        per_robot: list[MPCRobotDiagnostic] = [
+            MPCRobotDiagnostic(
+                tick=tick,
+                robot_id=robot.robot_id,
+                tracking_error=self.last_tracking_error.get(robot.robot_id, 0.0),
+                control_effort=self.last_control_effort.get(robot.robot_id, 0.0),
+                qp_iterations=int(self.last_iterations.get(robot.robot_id, 0)),
+                qp_solve_time_ms=self.last_solve_time_ms.get(robot.robot_id, 0.0),
+                qp_status=self.last_status.get(robot.robot_id, "unknown"),
             )
+            for robot in robots
+        ]
         times = list(self.last_solve_time_ms.values()) or [0.0]
         # Per-robot QP has 2N decision vars (vx,vy stacked over the horizon).
         # Constraint rows: 2N box + 2N slew + 2N·(R−1) neighbour keep-outs.

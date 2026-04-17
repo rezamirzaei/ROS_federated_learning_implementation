@@ -425,7 +425,9 @@ class DigitalTwinNode(Node):
 
         # Progress bar for average accuracy
         if state.robots:
-            avg_acc = max(0.0, min(100.0, sum(r.accuracy for r in state.robots.values()) / len(state.robots)))
+            avg_acc = max(
+                0.0, min(100.0, sum(r.accuracy for r in state.robots.values()) / len(state.robots))
+            )
             ax2.text(
                 0.05,
                 0.2,

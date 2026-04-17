@@ -145,7 +145,7 @@ services:
     container_name: fl_web_dashboard
     hostname: web_dashboard
     ports:
-      - "5000:5000"
+      - "${FL_ROBOTS_ROS_DASHBOARD_PORT:-5001}:5000"
     depends_on:
       - digital_twin
     command: >

@@ -409,7 +409,7 @@ class CoordinatorNode(Node):
         timeout = 30.0  # Consider robot inactive after 30s
 
         active = 0
-        for robot_id, info in self.registered_robots.items():
+        for info in self.registered_robots.values():
             if current_time - info["last_seen"] < timeout:
                 active += 1
 

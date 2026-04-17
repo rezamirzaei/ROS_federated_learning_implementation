@@ -810,7 +810,9 @@ class RobotAgentNode(Node):
                 missing.append(name)
                 continue
             if g.shape != param.shape:
-                mismatched.append(f"{name}: snapshot {tuple(g.shape)} != model {tuple(param.shape)}")
+                mismatched.append(
+                    f"{name}: snapshot {tuple(g.shape)} != model {tuple(param.shape)}"
+                )
                 continue
             term = (param - g).pow(2).sum()
             prox = term if prox is None else prox + term

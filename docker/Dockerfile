@@ -28,13 +28,17 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-COPY pyproject.toml uv.lock README.md main.py /app/
-COPY src/fl_robots /app/src/fl_robots
+# Layer 1: Copy only dependency metadata for caching.
+COPY pyproject.toml uv.lock README.md /app/
 
-# Install runtime deps from the locked resolver output rather than loose
-# pyproject ranges. This keeps the container supply chain aligned with CI.
+# Layer 2: Install runtime deps (cached unless pyproject.toml / uv.lock change).
 RUN python -m pip install --upgrade pip setuptools wheel "uv==${UV_VERSION}" && \
-    uv sync --locked --extra ml --no-dev --no-editable --python python
+    uv sync --locked --extra ml --no-dev --no-editable --no-install-project --python python
+
+# Layer 3: Copy source and install the project itself.
+COPY src/fl_robots /app/src/fl_robots
+COPY main.py /app/
+RUN uv sync --locked --extra ml --no-dev --no-editable --python python
 
 # Drop privileges. All artefacts live under /app (writable by appuser) and
 # /tmp (world-writable). Avoids the "running containers as root" OWASP
@@ -136,9 +140,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # standalone image consume the same locked Python dependency graph.
 WORKDIR /app
 COPY pyproject.toml uv.lock README.md /app/
-COPY src/fl_robots /app/src/fl_robots
 RUN pip3 install --no-cache-dir --upgrade pip setuptools wheel "uv==${UV_VERSION}" && \
-    uv sync --locked --extra ml --extra ros --no-dev --no-editable --python /usr/bin/python3
+    uv sync --locked --extra ml --extra ros --no-dev --no-editable --no-install-project --python /usr/bin/python3
+COPY src/fl_robots /app/src/fl_robots
+RUN uv sync --locked --extra ml --extra ros --no-dev --no-editable --python /usr/bin/python3
 
 WORKDIR /ros2_ws
 

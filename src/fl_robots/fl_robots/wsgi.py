@@ -10,4 +10,3 @@ from .standalone_web import create_app
 _simulation = SimulationEngine()
 app = create_app(_simulation)
 atexit.register(_simulation.shutdown)
-

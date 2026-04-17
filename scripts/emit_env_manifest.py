@@ -19,14 +19,13 @@ import platform
 import subprocess
 import sys
 from datetime import datetime, timezone
+from pathlib import Path
 
 
 def _git_sha() -> str:
     try:
         return (
-            subprocess.check_output(
-                ["git", "rev-parse", "HEAD"], stderr=subprocess.DEVNULL
-            )
+            subprocess.check_output(["git", "rev-parse", "HEAD"], stderr=subprocess.DEVNULL)
             .decode()
             .strip()
         )
@@ -61,7 +60,8 @@ def main() -> None:
     args = parser.parse_args()
 
     manifest = build_manifest()
-    os.makedirs(os.path.dirname(args.output) or ".", exist_ok=True)
+    out = Path(args.output)
+    out.parent.mkdir(parents=True, exist_ok=True)
     with open(args.output, "w") as f:
         json.dump(manifest, f, indent=2, default=str)
     print(f"Wrote environment manifest to {args.output}")
@@ -69,4 +69,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

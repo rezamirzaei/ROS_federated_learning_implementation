@@ -169,19 +169,18 @@ class DistributedMPCPlanner:
         iterations and tag the status as ``grid-search`` — this keeps the
         dashboard UI uniform across planners.
         """
-        per_robot: list[MPCRobotDiagnostic] = []
-        for robot in robots:
-            per_robot.append(
-                MPCRobotDiagnostic(
-                    tick=tick,
-                    robot_id=robot.robot_id,
-                    tracking_error=self._last_tracking_error.get(robot.robot_id, 0.0),
-                    control_effort=self._last_control_effort.get(robot.robot_id, 0.0),
-                    qp_iterations=0,
-                    qp_solve_time_ms=self._last_solve_time_ms.get(robot.robot_id, 0.0),
-                    qp_status="grid-search",
-                )
+        per_robot: list[MPCRobotDiagnostic] = [
+            MPCRobotDiagnostic(
+                tick=tick,
+                robot_id=robot.robot_id,
+                tracking_error=self._last_tracking_error.get(robot.robot_id, 0.0),
+                control_effort=self._last_control_effort.get(robot.robot_id, 0.0),
+                qp_iterations=0,
+                qp_solve_time_ms=self._last_solve_time_ms.get(robot.robot_id, 0.0),
+                qp_status="grid-search",
             )
+            for robot in robots
+        ]
         times = list(self._last_solve_time_ms.values()) or [0.0]
         # Grid search has no QP, so variables/constraints are reported as
         # the equivalent "decision surface": horizon × (|candidates|=8).

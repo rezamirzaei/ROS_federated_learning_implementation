@@ -128,7 +128,9 @@ def build_dashboard_app(node: Any) -> tuple[Flask, Any | None]:
     @app.before_request
     def _request_setup() -> None:
         g.request_id = request.headers.get("X-Request-ID", "").strip() or str(uuid.uuid4())
-        g.csrf_token = request.cookies.get(_CSRF_COOKIE_NAME, "").strip() or secrets.token_urlsafe(32)
+        g.csrf_token = request.cookies.get(_CSRF_COOKIE_NAME, "").strip() or secrets.token_urlsafe(
+            32
+        )
 
     @app.after_request
     def _security_headers(response: Response) -> Response:  # pragma: no cover - trivial hook

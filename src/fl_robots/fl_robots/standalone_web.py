@@ -447,7 +447,9 @@ def create_app(simulation: SimulationEngine | None = None) -> Flask:
     def _request_setup() -> None:
         g.request_started_at = time.perf_counter()
         g.request_id = request.headers.get("X-Request-ID", "").strip() or str(uuid.uuid4())
-        g.csrf_token = request.cookies.get(_CSRF_COOKIE_NAME, "").strip() or secrets.token_urlsafe(32)
+        g.csrf_token = request.cookies.get(_CSRF_COOKIE_NAME, "").strip() or secrets.token_urlsafe(
+            32
+        )
         _bind_request_context(g.request_id)
 
     @app.after_request
@@ -479,9 +481,9 @@ def create_app(simulation: SimulationEngine | None = None) -> Flask:
         fl_http_requests_total.labels(path=path, method=method, status=status).inc()
         started_at = getattr(g, "request_started_at", None)
         if isinstance(started_at, (int, float)):
-            fl_http_request_duration_seconds.labels(path=path, method=method, status=status).observe(
-                max(0.0, time.perf_counter() - started_at)
-            )
+            fl_http_request_duration_seconds.labels(
+                path=path, method=method, status=status
+            ).observe(max(0.0, time.perf_counter() - started_at))
         _clear_request_context()
         return response
 

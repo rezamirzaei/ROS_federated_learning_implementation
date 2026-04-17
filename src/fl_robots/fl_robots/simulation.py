@@ -545,8 +545,9 @@ class SimulationEngine:
                 # the simulation's actual predictor isn't advanced by the
                 # planner projection.
                 px, py, vx, vy = self._target_predictor.state
-                for k in range(horizon):
-                    tgt_traj.append((px + vx * dt * (k + 1), py + vy * dt * (k + 1)))
+                tgt_traj = [
+                    (px + vx * dt * (k + 1), py + vy * dt * (k + 1)) for k in range(horizon)
+                ]
             else:
                 tgt_traj = [tgt_now] * horizon
             for robot_id, robot in self.robots.items():
@@ -963,7 +964,9 @@ class SimulationEngine:
             self.current_round += 1
             divergence = (formation_error * 0.35) + max(0.0, 0.8 - min_separation)
             mean_loss = sum(r.training_loss for r in self.robots.values()) / len(self.robots)
-            mean_accuracy = max(0.0, sum(r.accuracy for r in self.robots.values()) / len(self.robots))
+            mean_accuracy = max(
+                0.0, sum(r.accuracy for r in self.robots.values()) / len(self.robots)
+            )
             record = AggregationRecord(
                 round_id=self.current_round,
                 participants=len(self.robots),

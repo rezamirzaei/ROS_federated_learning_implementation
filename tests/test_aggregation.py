@@ -57,7 +57,7 @@ class TestSimpleNavigationNet:
         assert len(weights) > 0
 
         # Check all weights are numpy arrays
-        for name, arr in weights.items():
+        for arr in weights.values():
             assert isinstance(arr, np.ndarray)
 
     def test_set_weights(self) -> None:
@@ -231,9 +231,9 @@ class TestGradientDivergence:
         global_weights = {"layer1": np.array([0.0, 0.0, 0.0])}
         local_weights = [{"layer1": np.array([1.0, 0.0, 0.0])}]
 
-        assert compute_weight_l2_drift(local_weights, global_weights) == compute_gradient_divergence(
+        assert compute_weight_l2_drift(
             local_weights, global_weights
-        )
+        ) == compute_gradient_divergence(local_weights, global_weights)
 
 
 class TestModelIntegration:

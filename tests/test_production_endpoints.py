@@ -92,7 +92,9 @@ def test_openapi_constant_matches_endpoint(paused_app: Any) -> None:
 # ── Rate limiting ────────────────────────────────────────────────────
 
 
-def test_command_endpoint_is_rate_limited(paused_app: Any, monkeypatch: Any, csrf_headers: Any) -> None:
+def test_command_endpoint_is_rate_limited(
+    paused_app: Any, monkeypatch: Any, csrf_headers: Any
+) -> None:
     """Rapid bursts beyond the per-IP cap must return 429."""
     # Shrink the window so the test is fast and deterministic.
     from fl_robots import standalone_web

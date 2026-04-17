@@ -224,7 +224,7 @@ def main() -> None:
     if len(sys.argv) > 1:
         results_dir = sys.argv[1]
 
-    if not os.path.exists(results_dir):
+    if not Path(results_dir).exists():
         print(f"Results directory not found: {results_dir}")
         print("Usage: python visualize.py [results_directory]")
         sys.exit(1)

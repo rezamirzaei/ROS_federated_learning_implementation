@@ -85,7 +85,7 @@ jobs:
       - name: Install project (core + dev + ml + viz + qp)
         run: uv sync --locked --extra dev --extra ml --extra viz --extra qp --python ${{ matrix.python-version }}
       - name: Run pytest with coverage
-        run: uv run --python ${{ matrix.python-version }} pytest tests/ -v --cov=fl_robots --cov-report=xml --cov-report=term
+        run: uv run --python ${{ matrix.python-version }} pytest tests/ -v --cov=fl_robots --cov-report=xml --cov-report=term --cov-fail-under=85
       - name: Upload coverage artifact
         if: matrix.python-version == '3.11'
         uses: actions/upload-artifact@v4

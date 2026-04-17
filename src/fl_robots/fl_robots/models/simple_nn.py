@@ -141,10 +141,7 @@ class SimpleNavigationNet(nn.Module):
         This intentionally excludes BatchNorm running statistics so FL rounds
         aggregate only learned weights and leave client-local BN buffers intact.
         """
-        return {
-            name: param.detach().cpu().numpy()
-            for name, param in self.named_parameters()
-        }
+        return {name: param.detach().cpu().numpy() for name, param in self.named_parameters()}
 
     def set_weights(self, weights: dict[str, np.ndarray]) -> None:
         """
@@ -163,9 +160,7 @@ class SimpleNavigationNet(nn.Module):
 
     def get_flat_weights(self) -> np.ndarray:
         """Get all trainable weights as a single flattened array."""
-        weights = []
-        for param in self.parameters():
-            weights.append(param.detach().cpu().numpy().flatten())
+        weights = [param.detach().cpu().numpy().flatten() for param in self.parameters()]
         return np.concatenate(weights)
 
     def set_flat_weights(self, flat_weights: np.ndarray) -> None:
@@ -241,10 +236,7 @@ class ObstacleAvoidanceNet(nn.Module):
 
     def get_trainable_weights(self) -> dict[str, np.ndarray]:
         """Extract trainable parameters only."""
-        return {
-            name: param.detach().cpu().numpy()
-            for name, param in self.named_parameters()
-        }
+        return {name: param.detach().cpu().numpy() for name, param in self.named_parameters()}
 
     def set_weights(self, weights: dict[str, np.ndarray]) -> None:
         state_dict = self.state_dict()
@@ -300,9 +292,9 @@ def federated_averaging(
 
     # Compute weighted average
     for client_idx, (weights, weight_factor) in enumerate(zip(weights_list, client_weights)):
-        for key in averaged_weights:
-            averaged_weights[key] += (
-                np.asarray(weights[key], dtype=averaged_weights[key].dtype) * weight_factor
+        for key, val in averaged_weights.items():
+            averaged_weights[key] = val + (
+                np.asarray(weights[key], dtype=val.dtype) * weight_factor
             )
 
     return averaged_weights
@@ -329,10 +321,10 @@ def compute_weight_l2_drift(
 
     for local_weights in weights_list:
         total_diff = 0.0
-        for key in global_weights:
+        for key, global_val in global_weights.items():
             if not _should_aggregate_weight_key(key):
                 continue
-            diff = local_weights[key] - global_weights[key]
+            diff = local_weights[key] - global_val
             total_diff += np.sum(diff**2)
         divergences.append(np.sqrt(total_diff))
 
@@ -344,4 +336,3 @@ def compute_gradient_divergence(
 ) -> list[float]:
     """Backward-compatible alias for :func:`compute_weight_l2_drift`."""
     return compute_weight_l2_drift(weights_list, global_weights)
-

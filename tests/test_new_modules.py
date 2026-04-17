@@ -184,7 +184,10 @@ def test_update_from_snapshot_populates_gauges() -> None:
     assert fl_controller_state.labels(state="ERROR")._value.get() == 0.0  # type: ignore[attr-defined]
     assert _sample_value(fl_tracking_error, "fl_tracking_error_count") - before_tracking == 2.0
     assert _sample_value(fl_mpc_solve_time_ms, "fl_mpc_solve_time_ms_count") - before_solve == 2.0
-    assert _sample_value(fl_round_latency_seconds, "fl_round_latency_seconds_count") - before_latency == 1.0
+    assert (
+        _sample_value(fl_round_latency_seconds, "fl_round_latency_seconds_count") - before_latency
+        == 1.0
+    )
 
     # Scrape produces well-formed Prometheus text format.
     from prometheus_client import generate_latest

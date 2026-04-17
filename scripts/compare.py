@@ -25,7 +25,8 @@ from typing import Any
 
 
 def _load(p: Path) -> dict[str, Any]:
-    return json.loads(p.read_text())
+    result: dict[str, Any] = json.loads(p.read_text())
+    return result
 
 
 def _extract_final_accuracy(report: dict[str, Any]) -> float | None:
@@ -41,7 +42,8 @@ def _extract_final_accuracy(report: dict[str, Any]) -> float | None:
 
 
 def _extract_bytes(report: dict[str, Any]) -> int | None:
-    return report.get("summary", {}).get("total_bytes")
+    val = report.get("summary", {}).get("total_bytes")
+    return int(val) if val is not None else None
 
 
 def _extract_wall(report: dict[str, Any]) -> float | None:

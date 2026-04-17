@@ -73,11 +73,7 @@ def test_tracing_setup_returns_false_without_dep(monkeypatch: Any) -> None:
     import sys
 
     # Force a reload with the otel modules masked out.
-    masked = {
-        k: None
-        for k in list(sys.modules)
-        if k.startswith("opentelemetry")
-    }
+    masked = {k: None for k in list(sys.modules) if k.startswith("opentelemetry")}
     # The `maybe_setup_tracing` ImportError branch only fires if one of the
     # inner imports is absent. We can't uninstall the package in-process,
     # so we verify the happy path: when the dep IS installed, calling

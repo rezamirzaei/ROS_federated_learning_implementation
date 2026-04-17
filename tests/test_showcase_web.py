@@ -217,9 +217,7 @@ def test_web_routes_expose_status_and_validate_commands(csrf_headers: Any) -> No
         assert command_response.status_code == 200
         assert command_response.get_json()["ok"] is True
 
-        invalid_response = client.post(
-            "/api/command", json={"command": "unknown"}, headers=headers
-        )
+        invalid_response = client.post("/api/command", json={"command": "unknown"}, headers=headers)
         assert invalid_response.status_code == 400
     finally:
         simulation.shutdown()

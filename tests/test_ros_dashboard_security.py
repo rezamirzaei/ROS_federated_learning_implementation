@@ -81,7 +81,9 @@ def test_dashboard_command_accepts_valid_csrf(tmp_path: Path, csrf_headers: Any)
     assert node.commands == ["start_training"]
 
 
-def test_dashboard_command_requires_bearer_when_token_set(tmp_path: Path, monkeypatch: Any, csrf_headers: Any) -> None:
+def test_dashboard_command_requires_bearer_when_token_set(
+    tmp_path: Path, monkeypatch: Any, csrf_headers: Any
+) -> None:
     monkeypatch.setenv("FL_ROBOTS_API_TOKEN", "dash-secret")
     node, client = _client(tmp_path)
     headers = csrf_headers(client, cookie_name="fl_robots_dashboard_csrf_token")
@@ -105,4 +107,3 @@ def test_dashboard_template_has_no_inline_handlers(tmp_path: Path) -> None:
     assert "onclick=" not in html
     assert "onerror=" not in html
     assert "unsafe-inline" not in client.get("/").headers["Content-Security-Policy"]
-
