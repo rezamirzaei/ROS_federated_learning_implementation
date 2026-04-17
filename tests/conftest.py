@@ -25,11 +25,16 @@ def fake_ros() -> Iterator[FakeROSEnvironment]:
 def csrf_headers():
     """Return a helper that bootstraps the standalone app's CSRF cookie."""
 
-    def _factory(client) -> dict[str, str]:
+    def _factory(
+        client,
+        *,
+        cookie_name: str = "fl_robots_csrf_token",
+        header_name: str = "X-CSRF-Token",
+    ) -> dict[str, str]:
         client.get("/")
-        cookie = client.get_cookie("fl_robots_csrf_token")
-        assert cookie is not None, "expected CSRF cookie to be issued on GET /"
-        return {"X-CSRF-Token": cookie.value}
+        cookie = client.get_cookie(cookie_name)
+        assert cookie is not None, f"expected CSRF cookie {cookie_name!r} to be issued on GET /"
+        return {header_name: cookie.value}
 
     return _factory
 

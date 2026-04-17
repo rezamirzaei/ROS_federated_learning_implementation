@@ -19,10 +19,13 @@ ROS2 Concepts Demonstrated:
 
 from __future__ import annotations
 
+import hmac
 import json
 import os
+import secrets
 import threading
 import time
+import uuid
 from collections import deque
 from pathlib import Path
 from typing import Any
@@ -41,13 +44,12 @@ from .ros_compat import (
 )
 
 try:
-    from flask import Flask, jsonify, render_template, request, send_file, send_from_directory
-    from flask_cors import CORS
+    from flask import Flask, Response, g, jsonify, render_template, request, send_file
 
     FLASK_AVAILABLE = True
 except ImportError:
     FLASK_AVAILABLE = False
-    print("Flask not available. Install with: pip install flask flask-cors")
+    print("Flask not available. Install with: pip install flask")
 
 try:
     from flask_socketio import SocketIO, emit
@@ -63,6 +65,213 @@ try:
     CUSTOM_INTERFACES = True
 except ImportError:
     CUSTOM_INTERFACES = False
+
+
+_AUTH_ENV_VAR = "FL_ROBOTS_API_TOKEN"
+_CSRF_COOKIE_NAME = "fl_robots_dashboard_csrf_token"
+_CSRF_HEADER_NAME = "X-CSRF-Token"
+_DEFAULT_DASHBOARD_CSP = (
+    "default-src 'self'; "
+    "script-src 'self' https://cdn.jsdelivr.net https://cdn.socket.io; "
+    "style-src 'self'; "
+    "img-src 'self' data:; "
+    "connect-src 'self' ws: wss:; "
+    "font-src 'self' data:; "
+    "frame-ancestors 'none'; "
+    "base-uri 'self'; "
+    "form-action 'self'; "
+    "object-src 'none'"
+)
+
+
+def _check_dashboard_auth() -> tuple[bool, str | None]:
+    """Optional bearer auth shared by the ROS dashboard mutating endpoints."""
+    expected = os.environ.get(_AUTH_ENV_VAR, "").strip()
+    if not expected:
+        return True, None
+    header = request.headers.get("Authorization", "")
+    scheme, _, token = header.partition(" ")
+    if scheme.lower() != "bearer":
+        return False, "Invalid or missing bearer token"
+    if not hmac.compare_digest(token.strip().encode("utf-8"), expected.encode("utf-8")):
+        return False, "Invalid or missing bearer token"
+    return True, None
+
+
+def _check_dashboard_csrf() -> tuple[bool, str | None]:
+    """Double-submit cookie CSRF protection for dashboard POST routes."""
+    cookie_token = request.cookies.get(_CSRF_COOKIE_NAME, "").strip()
+    header_token = request.headers.get(_CSRF_HEADER_NAME, "").strip()
+    if not cookie_token or not header_token:
+        return False, "Missing CSRF token"
+    if not hmac.compare_digest(cookie_token.encode("utf-8"), header_token.encode("utf-8")):
+        return False, "Invalid CSRF token"
+    return True, None
+
+
+def build_dashboard_app(node: Any) -> tuple[Flask, Any | None]:
+    """Build the ROS dashboard Flask app without starting the server.
+
+    Keeping app construction separate makes the dashboard security policy
+    testable without constructing a ROS node that immediately spawns a thread.
+    """
+    if not FLASK_AVAILABLE:
+        raise RuntimeError("Flask is not available")
+
+    web_dir = Path(__file__).parent / "web"
+    template_dir = web_dir / "templates"
+    static_dir = web_dir / "static"
+
+    app = Flask(__name__, template_folder=str(template_dir), static_folder=str(static_dir))
+    csp = os.environ.get("FL_ROBOTS_CSP", _DEFAULT_DASHBOARD_CSP)
+
+    @app.before_request
+    def _request_setup() -> None:
+        g.request_id = request.headers.get("X-Request-ID", "").strip() or str(uuid.uuid4())
+        g.csrf_token = request.cookies.get(_CSRF_COOKIE_NAME, "").strip() or secrets.token_urlsafe(32)
+
+    @app.after_request
+    def _security_headers(response: Response) -> Response:  # pragma: no cover - trivial hook
+        response.headers.setdefault("Content-Security-Policy", csp)
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("Referrer-Policy", "no-referrer")
+        response.headers.setdefault(
+            "Permissions-Policy",
+            "accelerometer=(), camera=(), geolocation=(), gyroscope=(), "
+            "magnetometer=(), microphone=(), payment=(), usb=()",
+        )
+        response.headers.setdefault("X-Request-ID", g.request_id)
+        if request.cookies.get(_CSRF_COOKIE_NAME) != g.csrf_token:
+            response.set_cookie(
+                _CSRF_COOKIE_NAME,
+                g.csrf_token,
+                httponly=False,
+                secure=request.is_secure,
+                samesite="Strict",
+                path="/",
+            )
+        return response
+
+    # Prometheus exposition — shares the global REGISTRY with standalone mode.
+    try:
+        from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+
+        from .observability.metrics import REGISTRY
+
+        @app.route("/metrics")
+        def prom_metrics():  # pragma: no cover - scraped by tests elsewhere
+            return Response(generate_latest(REGISTRY), mimetype=CONTENT_TYPE_LATEST)
+    except ImportError:  # pragma: no cover
+        pass
+
+    socketio = None
+    if SOCKETIO_AVAILABLE:
+        socketio_kwargs: dict[str, Any] = {"async_mode": "threading"}
+        raw_origins = os.environ.get("FL_ROBOTS_SOCKETIO_CORS_ORIGINS", "").strip()
+        if raw_origins:
+            socketio_kwargs["cors_allowed_origins"] = [
+                origin.strip() for origin in raw_origins.split(",") if origin.strip()
+            ]
+        socketio = SocketIO(app, **socketio_kwargs)
+        node.socketio = socketio
+
+    @app.route("/")
+    def index():
+        return render_template("dashboard.html")
+
+    @app.route("/api/status")
+    def get_status():
+        return jsonify(node._get_status())
+
+    @app.route("/api/command", methods=["POST"])
+    def send_command():
+        ok, reason = _check_dashboard_auth()
+        if not ok:
+            return jsonify({"success": False, "error": reason}), 401
+        ok, reason = _check_dashboard_csrf()
+        if not ok:
+            return jsonify({"success": False, "error": reason}), 403
+
+        data = request.get_json(silent=True) or {}
+        cmd = data.get("command")
+        if not cmd or not isinstance(cmd, str):
+            return jsonify({"success": False, "error": "No command specified"}), 400
+
+        valid_commands = {
+            "start_training",
+            "stop_training",
+            "publish_weights",
+        }
+        if cmd not in valid_commands:
+            return jsonify({"success": False, "error": f"Unknown command: {cmd}"}), 400
+
+        node._send_command(cmd)
+        return jsonify({"success": True, "command": cmd})
+
+    @app.route("/api/trigger-aggregation", methods=["POST"])
+    def trigger_aggregation():
+        ok, reason = _check_dashboard_auth()
+        if not ok:
+            return jsonify({"success": False, "error": reason}), 401
+        ok, reason = _check_dashboard_csrf()
+        if not ok:
+            return jsonify({"success": False, "error": reason}), 403
+        if CUSTOM_INTERFACES:
+            result = node._call_trigger_aggregation()
+            return jsonify(result)
+        node._send_command("publish_weights")
+        return jsonify({"success": True, "message": "Published weights request"})
+
+    @app.route("/api/update-hyperparameters", methods=["POST"])
+    def update_hyperparameters():
+        ok, reason = _check_dashboard_auth()
+        if not ok:
+            return jsonify({"success": False, "error": reason}), 401
+        ok, reason = _check_dashboard_csrf()
+        if not ok:
+            return jsonify({"success": False, "error": reason}), 403
+
+        data = request.get_json(silent=True) or {}
+        lr = float(data.get("learning_rate", 0))
+        bs = int(data.get("batch_size", 0))
+        ep = int(data.get("local_epochs", 0))
+
+        if CUSTOM_INTERFACES:
+            result = node._call_update_hyperparameters(lr, bs, ep)
+            return jsonify(result)
+        return jsonify({"success": False, "message": "Custom interfaces not available"})
+
+    @app.route("/api/digital-twin")
+    def get_digital_twin():
+        twin_path = Path(node.output_dir) / DIGITAL_TWIN_IMAGE
+        if twin_path.exists():
+            return send_file(twin_path, mimetype="image/png")
+        return "", 404
+
+    @app.route("/api/download-results")
+    def download_results():
+        import io
+        import zipfile
+
+        memory_file = io.BytesIO()
+        with zipfile.ZipFile(memory_file, "w", zipfile.ZIP_DEFLATED) as zf:
+            for filepath in iter_bundle_paths(node.output_dir):
+                zf.write(filepath, filepath.name)
+        memory_file.seek(0)
+        return send_file(
+            memory_file,
+            mimetype="application/zip",
+            as_attachment=True,
+            download_name="fl_results.zip",
+        )
+
+    @app.route("/api/robots")
+    def get_robots():
+        with node.state_lock:
+            return jsonify(list(node.robots.keys()))
+
+    return app, socketio
 
 
 class WebDashboardNode(Node):
@@ -340,151 +549,19 @@ class WebDashboardNode(Node):
 
     def _run_flask(self):
         """Run Flask web server with optional Socket.IO."""
-        # Resolve template and static directories
-        web_dir = Path(__file__).parent / "web"
-        template_dir = web_dir / "templates"
-        static_dir = web_dir / "static"
-
-        app = Flask(__name__, template_folder=str(template_dir), static_folder=str(static_dir))
-        CORS(app)
-
-        # Same security headers baseline as standalone_web.py. Kept in sync
-        # manually — both dashboards serve the same static asset family so
-        # policies should not drift between them.
-        @app.after_request
-        def _security_headers(response):  # pragma: no cover - requires flask-cors
-            response.headers.setdefault(
-                "Content-Security-Policy",
-                os.environ.get(
-                    "FL_ROBOTS_CSP",
-                    "default-src 'self'; script-src 'self' 'unsafe-inline'; "
-                    "style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
-                    "connect-src 'self' ws: wss:; font-src 'self' data:; "
-                    "frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
-                ),
-            )
-            response.headers.setdefault("X-Frame-Options", "DENY")
-            response.headers.setdefault("X-Content-Type-Options", "nosniff")
-            response.headers.setdefault("Referrer-Policy", "no-referrer")
-            response.headers.setdefault(
-                "Permissions-Policy",
-                "accelerometer=(), camera=(), geolocation=(), gyroscope=(), "
-                "magnetometer=(), microphone=(), payment=(), usb=()",
-            )
-            return response
-
-        # Prometheus exposition — shares the global REGISTRY with
-        # ``standalone_web.py`` and ``observability/metrics.py`` so scrapers
-        # see the same metric names in both deployment modes.
-        try:
-            from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
-
-            from .observability.metrics import REGISTRY
-
-            @app.route("/metrics")
-            def prom_metrics():  # pragma: no cover - scraped by tests elsewhere
-                from flask import Response as _Resp
-
-                return _Resp(generate_latest(REGISTRY), mimetype=CONTENT_TYPE_LATEST)
-        except ImportError:  # pragma: no cover
-            pass
-
-        node = self
-
-        # Initialize Socket.IO if available
-        if SOCKETIO_AVAILABLE:
-            socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
-            node.socketio = socketio
-        else:
-            socketio = None
-
-        # ── Routes (View + Controller) ──────────────────────────────
-
-        @app.route("/")
-        def index():
-            return render_template("dashboard.html")
-
-        @app.route("/api/status")
-        def get_status():
-            return jsonify(node._get_status())
-
-        @app.route("/api/command", methods=["POST"])
-        def send_command():
-            data = request.get_json(silent=True) or {}
-            cmd = data.get("command")
-            if not cmd or not isinstance(cmd, str):
-                return jsonify({"success": False, "error": "No command specified"}), 400
-
-            _VALID_COMMANDS = {
-                "start_training",
-                "stop_training",
-                "publish_weights",
-            }
-            if cmd not in _VALID_COMMANDS:
-                return jsonify({"success": False, "error": f"Unknown command: {cmd}"}), 400
-
-            node._send_command(cmd)
-            return jsonify({"success": True, "command": cmd})
-
-        @app.route("/api/trigger-aggregation", methods=["POST"])
-        def trigger_aggregation():
-            if CUSTOM_INTERFACES:
-                result = node._call_trigger_aggregation()
-                return jsonify(result)
-            else:
-                # Fallback: publish command
-                node._send_command("publish_weights")
-                return jsonify({"success": True, "message": "Published weights request"})
-
-        @app.route("/api/update-hyperparameters", methods=["POST"])
-        def update_hyperparameters():
-            data = request.get_json()
-            lr = float(data.get("learning_rate", 0))
-            bs = int(data.get("batch_size", 0))
-            ep = int(data.get("local_epochs", 0))
-
-            if CUSTOM_INTERFACES:
-                result = node._call_update_hyperparameters(lr, bs, ep)
-                return jsonify(result)
-            else:
-                return jsonify({"success": False, "message": "Custom interfaces not available"})
-
-        @app.route("/api/digital-twin")
-        def get_digital_twin():
-            twin_path = Path(node.output_dir) / DIGITAL_TWIN_IMAGE
-            if twin_path.exists():
-                return send_file(twin_path, mimetype="image/png")
-            return "", 404
-
-        @app.route("/api/download-results")
-        def download_results():
-            import io
-            import zipfile
-
-            memory_file = io.BytesIO()
-            with zipfile.ZipFile(memory_file, "w", zipfile.ZIP_DEFLATED) as zf:
-                for filepath in iter_bundle_paths(node.output_dir):
-                    zf.write(filepath, filepath.name)
-            memory_file.seek(0)
-            return send_file(
-                memory_file,
-                mimetype="application/zip",
-                as_attachment=True,
-                download_name="fl_results.zip",
-            )
-
-        @app.route("/api/robots")
-        def get_robots():
-            with node.state_lock:
-                return jsonify(list(node.robots.keys()))
+        app, socketio = build_dashboard_app(self)
 
         # ── Start server ────────────────────────────────────────────
         if socketio:
             socketio.run(
-                app, host=node.host, port=node.port, allow_unsafe_werkzeug=True, use_reloader=False
+                app,
+                host=self.host,
+                port=self.port,
+                allow_unsafe_werkzeug=True,
+                use_reloader=False,
             )
         else:
-            app.run(host=node.host, port=node.port, threaded=True, use_reloader=False)
+            app.run(host=self.host, port=self.port, threaded=True, use_reloader=False)
 
 
 def main(args=None):

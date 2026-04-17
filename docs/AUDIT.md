@@ -19,21 +19,22 @@ The following findings are now considered **fixed** or **fixed enough to be remo
 - **Security scanning added**: `.github/workflows/{codeql,trivy,dependency-review}.yml`, `ci.yml`, `.pre-commit-config.yaml`, and `bandit.yaml` add CodeQL, Trivy, dependency review, and Bandit.
 - **NetworkPolicy added**: `deploy/k8s/networkpolicy.yaml` now restricts k8s traffic by default.
 - **Standalone reproducibility improved**: `SimulationEngine` now accepts a deterministic seed and `create_app()` honors `FL_ROBOTS_SEED`.
+- **ROS dashboard security largely aligned**: `web_dashboard.py`, `dashboard.html`, and `dashboard.js` now use CSRF-protected POSTs, stricter CSP, same-origin defaults, and no inline event handlers.
 
 ### Overall score
 
-- **Unweighted mean across 14 sections:** **8.3 / 10**
-- **Weighted production-readiness score:** **8.0 / 10**
+- **Unweighted mean across 14 sections:** **8.4 / 10**
+- **Weighted production-readiness score:** **8.1 / 10**
 
 ### Current characterisation
 
 The project is now **clearly above “polished demo” quality** and has crossed into **credible pre-production engineering** for the standalone mode. The biggest remaining gaps are no longer the old P0 defects; they are now mostly:
 
-1. **Security parity between the standalone UI and the ROS dashboard** (`web_dashboard.py` / `dashboard.html` / `dashboard.js` still lag behind the hardened standalone app).
-2. **Supply-chain hardening depth** (base-image digest pinning, apt version pinning, dependency-policy maturity).
-3. **Typing / CI strictness** (`mypy` remains intentionally relaxed, `pyright` is still advisory).
-4. **Deployment maturity** (no Helm chart / HPA, still a single main standalone manifest).
-5. **Scalability work left on the table** (per-robot QPs are still solved sequentially even though solver reuse is now fixed).
+1. **Supply-chain hardening depth** (base-image digest pinning, apt version pinning, dependency-policy maturity).
+2. **Typing / CI strictness** (`mypy` remains intentionally relaxed, `pyright` is still advisory).
+3. **Deployment maturity** (no Helm chart / HPA, still a single main standalone manifest).
+4. **Scalability work left on the table** (per-robot QPs are still solved sequentially even though solver reuse is now fixed).
+5. **Advanced verification still missing** (mutation testing, OpenAPI fuzzing, broader ROS launch coverage).
 
 ---
 
@@ -160,28 +161,25 @@ The project is now **clearly above “polished demo” quality** and has crossed
 - Add trace correlation and exemplars.
 - Bring the ROS dashboard path to the same observability standard.
 
-### 1.8 Security — **8.6 / 10**
+### 1.8 Security — **9.0 / 10**
 
 **Improved**
 - Bearer auth uses constant-time comparison.
 - Standalone mutating endpoints now have CSRF protection in open-auth mode.
 - Standalone CSP is materially stricter.
+- The ROS dashboard now also uses CSRF-protected POSTs, stricter CSP, same-origin defaults, and no inline event handlers/styles.
 - CI now includes Bandit, CodeQL, Trivy, and dependency review.
 - k8s now includes a `NetworkPolicy`.
 
 **Why not 10**
-- `src/fl_robots/fl_robots/web_dashboard.py` still uses a weaker model:
-  - permissive `CORS(app)`
-  - `cors_allowed_origins="*"`
-  - inline handlers / inline styles in `dashboard.html`
-  - no CSRF parity on ROS-dashboard mutation routes
 - Container images are still not digest-pinned.
 - apt packages are still not version-pinned.
+- The dashboard still depends on explicitly-whitelisted third-party CDNs (`cdn.jsdelivr.net`, `cdn.socket.io`) rather than fully self-hosted assets.
 
 **To reach 10**
-- Bring `web_dashboard.py`, `dashboard.html`, and `dashboard.js` to parity with the hardened standalone app.
 - Pin container base images by digest.
 - Pin apt package versions or move to a more locked-down base strategy.
+- Self-host the remaining third-party dashboard assets so CSP can become fully self-only.
 
 ### 1.9 Performance & scalability — **7.8 / 10**
 
@@ -285,31 +283,31 @@ The project is now **clearly above “polished demo” quality** and has crossed
 
 ## P0
 
-1. **Harden the ROS dashboard path to match standalone security**
-   - Files: `src/fl_robots/fl_robots/web_dashboard.py`, `web/templates/dashboard.html`, `web/static/js/dashboard.js`
-   - Remove inline handlers/styles, tighten CSP, add CSRF/auth parity, restrict CORS/Socket.IO origins.
-
-2. **Pin container/runtime supply chain inputs**
+1. **Pin container/runtime supply chain inputs**
    - Files: `docker/Dockerfile`
    - Pin base images by digest and pin apt package versions where feasible.
 
 ## P1
 
-3. **Make type-checking materially stricter**
+2. **Make type-checking materially stricter**
    - Files: `pyproject.toml`, `.github/workflows/ci.yml`, first-party modules currently ignored by mypy
    - Reduce or eliminate `ignore_errors`, promote `pyright` from advisory.
 
-4. **Parallelize per-robot QP solves**
+3. **Parallelize per-robot QP solves**
    - Files: `src/fl_robots/fl_robots/mpc_qp.py`
    - The solver reuse fix is already in place; parallelism is now the next obvious performance step.
 
-5. **Expand deployment packaging**
+4. **Expand deployment packaging**
    - Files: `deploy/helm/**` or `deploy/k8s/**`
    - Add Helm / HPA / environment overlays.
 
-6. **Expand advanced testing**
+5. **Expand advanced testing**
    - Add mutation testing and OpenAPI fuzzing.
    - Expand ROS `launch_testing` scenarios.
+
+6. **Self-host remaining dashboard CDN assets**
+   - Files: `src/fl_robots/fl_robots/web/templates/dashboard.html`, `src/fl_robots/fl_robots/web/static/**`
+   - Remove the last third-party script origins from CSP.
 
 ## P2
 
@@ -337,12 +335,12 @@ These are no longer open audit items:
 - missing Bandit / CodeQL / Trivy / dependency review
 - missing NetworkPolicy
 - nightly ROS launch tests swallowing failures
+- ROS dashboard missing CSRF / stricter CSP / same-origin defaults
 
 ### Findings still open
 
 The highest-value remaining issues are now:
 
-- ROS dashboard security parity
 - strict typing / stronger CI enforcement
 - image digest / apt pinning
 - Helm / HPA / packaging maturity
@@ -355,4 +353,4 @@ The highest-value remaining issues are now:
 
 This repository is no longer blocked by the original headline defects. The audit should now focus on **parity, hardening, and scale**, not on the old correctness bugs.
 
-If another pass is taken immediately, the best next target is **bringing the ROS dashboard security model up to the same standard as the hardened standalone UI**.
+If another pass is taken immediately, the best next target is **digest-pinning and supply-chain tightening in `docker/Dockerfile`**, followed by stricter type enforcement.

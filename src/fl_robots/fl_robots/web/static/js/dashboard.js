@@ -48,6 +48,20 @@ const robotColors = ['#e94560', '#4ecca3', '#f39c12', '#3498db', '#9b59b6', '#1a
 let socket = null;
 let usePolling = false;
 
+function getCookie(name) {
+    const prefix = `${name}=`;
+    return document.cookie
+        .split(';')
+        .map((part) => part.trim())
+        .find((part) => part.startsWith(prefix))
+        ?.slice(prefix.length) ?? '';
+}
+
+function csrfHeaders() {
+    const token = getCookie('fl_robots_dashboard_csrf_token');
+    return token ? { 'X-CSRF-Token': token } : {};
+}
+
 function initSocket() {
     try {
         socket = io({ transports: ['websocket', 'polling'], reconnection: true });
@@ -114,10 +128,11 @@ function updateDashboard(data) {
 
     // Digital twin image (cache bust)
     const img = document.getElementById('digital-twin-img');
+    const twinError = document.getElementById('twin-error');
     if (img) {
         img.src = '/api/digital-twin?' + Date.now();
-        img.style.display = 'block';
-        document.getElementById('twin-error').style.display = 'none';
+        img.classList.remove('hidden');
+        if (twinError) twinError.classList.add('hidden');
     }
 
     // Draw topology
@@ -127,26 +142,62 @@ function updateDashboard(data) {
 function updateRobots(robots) {
     const container = document.getElementById('robots-container');
     if (!Object.keys(robots).length) {
-        container.innerHTML = '<p style="color:#666;">Waiting for robots…</p>';
+        const empty = document.createElement('p');
+        empty.className = 'muted-text';
+        empty.textContent = 'Waiting for robots…';
+        container.replaceChildren(empty);
         return;
     }
 
-    let html = '';
+    const cards = [];
     for (const [id, r] of Object.entries(robots)) {
         const cls = r.is_training ? 'status-training' : (r.accuracy > 60 ? 'status-complete' : 'status-idle');
         const txt = r.is_training ? 'Training' : (r.accuracy > 60 ? 'Ready' : 'Idle');
-        html += `<div class="robot-card">
-            <div class="robot-header">
-                <span class="robot-name">🤖 ${id}</span>
-                <span class="robot-status ${cls}">${txt}</span>
-            </div>
-            <div class="stat-box"><span class="stat-label">Loss</span><span>${r.loss != null ? r.loss.toFixed(4) : '—'}</span></div>
-            <div class="stat-box"><span class="stat-label">Accuracy</span><span>${r.accuracy != null ? r.accuracy.toFixed(1) + '%' : '—'}</span></div>
-            <div class="stat-box"><span class="stat-label">Rounds</span><span>${r.rounds || 0}</span></div>
-            <div class="progress-bar"><div class="progress-fill" style="width:${r.accuracy || 0}%"></div></div>
-        </div>`;
+        const card = document.createElement('div');
+        card.className = 'robot-card';
+
+        const header = document.createElement('div');
+        header.className = 'robot-header';
+
+        const name = document.createElement('span');
+        name.className = 'robot-name';
+        name.textContent = `🤖 ${id}`;
+
+        const status = document.createElement('span');
+        status.className = `robot-status ${cls}`;
+        status.textContent = txt;
+
+        header.append(name, status);
+        card.appendChild(header);
+
+        const stats = [
+            ['Loss', r.loss != null ? r.loss.toFixed(4) : '—'],
+            ['Accuracy', r.accuracy != null ? `${r.accuracy.toFixed(1)}%` : '—'],
+            ['Rounds', String(r.rounds || 0)],
+        ];
+
+        stats.forEach(([label, value]) => {
+            const box = document.createElement('div');
+            box.className = 'stat-box';
+            const labelEl = document.createElement('span');
+            labelEl.className = 'stat-label';
+            labelEl.textContent = label;
+            const valueEl = document.createElement('span');
+            valueEl.textContent = value;
+            box.append(labelEl, valueEl);
+            card.appendChild(box);
+        });
+
+        const bar = document.createElement('div');
+        bar.className = 'progress-bar';
+        const fill = document.createElement('div');
+        fill.className = 'progress-fill';
+        fill.style.width = `${r.accuracy || 0}%`;
+        bar.appendChild(fill);
+        card.appendChild(bar);
+        cards.push(card);
     }
-    container.innerHTML = html;
+    container.replaceChildren(...cards);
 }
 
 function updateCharts(data) {
@@ -254,7 +305,8 @@ function drawTopology(robots) {
 function sendCommand(cmd) {
     fetch('/api/command', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...csrfHeaders() },
+        credentials: 'same-origin',
         body: JSON.stringify({ command: cmd }),
     })
     .then(r => r.json())
@@ -263,7 +315,11 @@ function sendCommand(cmd) {
 }
 
 function triggerAggregation() {
-    fetch('/api/trigger-aggregation', { method: 'POST' })
+    fetch('/api/trigger-aggregation', {
+        method: 'POST',
+        headers: { ...csrfHeaders() },
+        credentials: 'same-origin',
+    })
         .then(r => r.json())
         .then(d => addLogEntry(`Aggregation: ${d.message || 'triggered'}`))
         .catch(e => addLogEntry(`Error: ${e}`));
@@ -275,7 +331,8 @@ function updateHyperparams() {
     const ep = parseInt(document.getElementById('param-epochs').value);
     fetch('/api/update-hyperparameters', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...csrfHeaders() },
+        credentials: 'same-origin',
         body: JSON.stringify({ learning_rate: lr, batch_size: bs, local_epochs: ep }),
     })
     .then(r => r.json())
@@ -300,12 +357,27 @@ function addLogEntry(msg) {
     const t = new Date().toLocaleTimeString();
     const el = document.createElement('div');
     el.className = 'log-entry';
-    el.innerHTML = `<span class="log-time">${t}</span>${msg}`;
+    const timeEl = document.createElement('span');
+    timeEl.className = 'log-time';
+    timeEl.textContent = t;
+    el.appendChild(timeEl);
+    el.appendChild(document.createTextNode(msg));
     log.insertBefore(el, log.firstChild);
     while (log.children.length > 100) log.removeChild(log.lastChild);
 }
 
 // ── Init ───────────────────────────────────────────────────────────
+document.querySelectorAll('[data-command]').forEach((button) => {
+    button.addEventListener('click', () => sendCommand(button.dataset.command));
+});
+document.getElementById('trigger-aggregation-btn')?.addEventListener('click', triggerAggregation);
+document.getElementById('download-results-btn')?.addEventListener('click', downloadResults);
+document.getElementById('update-hyperparams-btn')?.addEventListener('click', updateHyperparams);
+document.getElementById('digital-twin-img')?.addEventListener('error', () => {
+    document.getElementById('digital-twin-img')?.classList.add('hidden');
+    document.getElementById('twin-error')?.classList.remove('hidden');
+});
+
 initSocket();
 addLogEntry('Dashboard loaded');
 

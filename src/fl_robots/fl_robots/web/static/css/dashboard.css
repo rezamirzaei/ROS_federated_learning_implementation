@@ -25,6 +25,12 @@ body{font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;background:linear-g
 .progress-bar{height:8px;background:rgba(255,255,255,.1);border-radius:4px;overflow:hidden;margin-top:10px}
 .progress-fill{height:100%;background:linear-gradient(90deg,#e94560,#4ecca3);transition:width .3s ease}
 
+.card-divider{border-color:rgba(255,255,255,.1);margin:15px 0}
+.card-subtitle{color:#e94560;font-size:.95em;margin-bottom:10px}
+.hyperparams-btn{margin-top:8px}
+.muted-text{color:#666}
+.hidden{display:none}
+
 .controls{display:flex;gap:10px;flex-wrap:wrap}
 .btn{padding:10px 20px;border:none;border-radius:8px;cursor:pointer;font-size:.9em;font-weight:bold;transition:all .2s ease}
 .btn-sm{padding:6px 14px;font-size:.85em}
