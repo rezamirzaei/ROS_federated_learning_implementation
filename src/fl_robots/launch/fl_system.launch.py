@@ -12,14 +12,14 @@ This launch file demonstrates:
 
 from __future__ import annotations
 
-from launch import LaunchDescription
+from launch import LaunchDescription  # type: ignore[attr-defined]
 from launch.actions import DeclareLaunchArgument, TimerAction
 from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import Node
 
 
-def generate_launch_description():
+def generate_launch_description() -> LaunchDescription:
     # Declare launch arguments
     num_robots_arg = DeclareLaunchArgument(
         "num_robots", default_value="3", description="Number of robot agents to spawn"

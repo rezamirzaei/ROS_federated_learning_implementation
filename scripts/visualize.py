@@ -14,6 +14,13 @@ import json
 import os
 import sys
 from pathlib import Path
+from typing import Any
+
+from fl_robots.results_artifacts import (
+    AGGREGATION_HISTORY_JSON,
+    ROBOT_METRICS_JSON,
+    resolve_summary_path,
+)
 
 try:
     import matplotlib.pyplot as plt
@@ -24,28 +31,28 @@ except ImportError:
     sys.exit(1)
 
 
-def load_results(results_dir: str):
+def load_results(results_dir: str | Path) -> dict[str, Any]:
     """Load all result files from the results directory."""
-    results_dir = Path(results_dir)
+    results_path = Path(results_dir)
 
-    data = {}
+    data: dict[str, Any] = {}
 
     # Load aggregation history
-    agg_file = results_dir / "aggregation_history.json"
+    agg_file = results_path / AGGREGATION_HISTORY_JSON
     if agg_file.exists():
-        with open(agg_file) as f:
+        with agg_file.open(encoding="utf-8") as f:
             data["aggregation"] = json.load(f)
 
     # Load robot metrics
-    robot_file = results_dir / "robot_metrics.json"
+    robot_file = results_path / ROBOT_METRICS_JSON
     if robot_file.exists():
-        with open(robot_file) as f:
+        with robot_file.open(encoding="utf-8") as f:
             data["robots"] = json.load(f)
 
     # Load summary
-    summary_file = results_dir / "training_summary.json"
-    if summary_file.exists():
-        with open(summary_file) as f:
+    summary_file = resolve_summary_path(results_path)
+    if summary_file is not None:
+        with summary_file.open(encoding="utf-8") as f:
             data["summary"] = json.load(f)
 
     return data
@@ -121,7 +128,7 @@ def plot_robot_metrics(data: dict, output_dir: str):
     fig, axes = plt.subplots(1, 2, figsize=(14, 5))
     fig.suptitle("Per-Robot Training Metrics", fontsize=14)
 
-    colors = plt.cm.tab10(np.linspace(0, 1, len(robot_data)))
+    colors = plt.get_cmap("tab10")(np.linspace(0, 1, len(robot_data)))
 
     # Plot losses
     for (robot_id, metrics), color in zip(robot_data.items(), colors):

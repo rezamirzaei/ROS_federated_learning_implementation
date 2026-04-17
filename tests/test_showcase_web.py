@@ -2,7 +2,7 @@ import math
 
 from fl_robots.message_bus import MessageBus
 from fl_robots.mpc import DistributedMPCPlanner
-from fl_robots.sim_models import Pose2D, RobotState
+from fl_robots.sim_models import BusEvent, Pose2D, RobotState
 from fl_robots.simulation import SimulationEngine
 from fl_robots.standalone_web import create_app
 
@@ -11,7 +11,7 @@ from fl_robots.standalone_web import create_app
 
 def test_message_bus_records_and_dispatches_events():
     bus = MessageBus()
-    received = []
+    received: list[BusEvent] = []
 
     bus.subscribe("/demo/topic", received.append)
     event = bus.publish("/demo/topic", "robot_1", {"value": 7})
@@ -23,7 +23,7 @@ def test_message_bus_records_and_dispatches_events():
 
 def test_message_bus_unsubscribe():
     bus = MessageBus()
-    received = []
+    received: list[BusEvent] = []
     bus.subscribe("/t", received.append)
     bus.publish("/t", "s", {"a": 1})
     assert len(received) == 1
@@ -34,7 +34,7 @@ def test_message_bus_unsubscribe():
 
 def test_message_bus_wildcard_subscription():
     bus = MessageBus()
-    received = []
+    received: list[BusEvent] = []
     bus.subscribe("*", received.append)
     bus.publish("/a", "s", {})
     bus.publish("/b", "s", {})

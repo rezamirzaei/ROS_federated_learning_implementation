@@ -19,7 +19,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from .controller import COMMAND_NAMES, is_valid_command, validate_command
 from .message_bus import MessageBus
-from .mpc import DistributedMPCPlanner, _safe_atan2
+from .mpc import DistributedMPCPlanner, MPCPlanner, _safe_atan2
 from .sim_models import (
     AggregationRecord,
     GlobalMetricPoint,
@@ -183,7 +183,7 @@ class SimulationEngine:
         self._thread: threading.Thread | None = None
         self._rng = random.Random(42)
         self.bus = MessageBus(max_events=cfg.max_events)
-        self.planner = DistributedMPCPlanner()
+        self.planner: MPCPlanner = DistributedMPCPlanner()
         self.robots: dict[str, RobotState] = {}
         self.aggregation_history: deque[AggregationRecord] = deque(
             maxlen=cfg.max_aggregation_history

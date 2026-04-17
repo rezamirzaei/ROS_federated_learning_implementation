@@ -7,6 +7,7 @@ by swapping in a tiny synthetic shard set via monkeypatching.
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -37,24 +38,23 @@ def stub_mnist(monkeypatch):
 
 
 def _cfg(**over) -> bm.BenchmarkConfig:
-    defaults = {
-        "rounds": 2,
-        "clients": 3,
-        "local_epochs": 1,
-        "batch_size": 16,
-        "lr": 0.05,
-        "alpha": 0.5,
-        "samples_per_client": 32,
-        "seed": 0,
-        "output": "/dev/null",
-        "data_root": "./data",
-        "device": "cpu",
-        "algorithm": "fedavg",
-        "proximal_mu": 0.01,
-        "num_seeds": 1,
-    }
-    defaults.update(over)
-    return bm.BenchmarkConfig(**defaults)
+    base = bm.BenchmarkConfig(
+        rounds=2,
+        clients=3,
+        local_epochs=1,
+        batch_size=16,
+        lr=0.05,
+        alpha=0.5,
+        samples_per_client=32,
+        seed=0,
+        output="/dev/null",
+        data_root="./data",
+        device="cpu",
+        algorithm="fedavg",
+        proximal_mu=0.01,
+        num_seeds=1,
+    )
+    return replace(base, **over)
 
 
 def test_fedavg_benchmark_runs_and_produces_per_round_stats():

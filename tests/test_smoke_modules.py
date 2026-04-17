@@ -45,12 +45,10 @@ def test_digital_twin_constructs_and_serializes_state(fake_ros):
     # Pydantic models — pure tests, no fake env needed.
     rv = RobotVisualState(
         robot_id="robot_0",
-        x=1.0,
-        y=2.0,
-        heading=0.5,
+        position=(1.0, 2.0),
+        angle=0.5,
         is_training=False,
-        training_round=3,
-        is_active=True,
+        rounds_completed=3,
     )
     sv = SystemVisualState(robots={"robot_0": rv}, global_round=3)
     assert sv.robots["robot_0"].robot_id == "robot_0"

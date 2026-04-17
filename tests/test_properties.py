@@ -17,7 +17,7 @@ import pytest
 from fl_robots.message_bus import MessageBus
 from fl_robots.models.simple_nn import federated_averaging
 from fl_robots.mpc import DistributedMPCPlanner
-from fl_robots.sim_models import Pose2D, RobotState
+from fl_robots.sim_models import BusEvent, Pose2D, RobotState
 from hypothesis import HealthCheck, assume, given, settings
 from hypothesis import strategies as st
 
@@ -113,7 +113,7 @@ def test_fedavg_single_client_is_identity(w, count):
 def test_message_bus_preserves_order_and_payload(events):
     """Every published event arrives in FIFO order with untouched payload."""
     bus = MessageBus(max_events=len(events) + 5)
-    received = []
+    received: list[BusEvent] = []
     bus.subscribe("/t", received.append)
     for source, payload in events:
         bus.publish("/t", source, payload)

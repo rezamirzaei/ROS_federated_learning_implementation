@@ -27,6 +27,7 @@ from collections import deque
 from pathlib import Path
 from typing import Any
 
+from .results_artifacts import DIGITAL_TWIN_IMAGE, iter_bundle_paths
 from .ros_compat import (
     DurabilityPolicy,
     HistoryPolicy,
@@ -450,8 +451,8 @@ class WebDashboardNode(Node):
 
         @app.route("/api/digital-twin")
         def get_digital_twin():
-            twin_path = os.path.join(node.output_dir, "digital_twin.png")
-            if os.path.exists(twin_path):
+            twin_path = Path(node.output_dir) / DIGITAL_TWIN_IMAGE
+            if twin_path.exists():
                 return send_file(twin_path, mimetype="image/png")
             return "", 404
 
@@ -462,16 +463,8 @@ class WebDashboardNode(Node):
 
             memory_file = io.BytesIO()
             with zipfile.ZipFile(memory_file, "w", zipfile.ZIP_DEFLATED) as zf:
-                for filename in [
-                    "aggregation_history.csv",
-                    "robot_metrics.json",
-                    "training_summary.json",
-                    "digital_twin.png",
-                    "aggregation_history.json",
-                ]:
-                    filepath = os.path.join(node.output_dir, filename)
-                    if os.path.exists(filepath):
-                        zf.write(filepath, filename)
+                for filepath in iter_bundle_paths(node.output_dir):
+                    zf.write(filepath, filepath.name)
             memory_file.seek(0)
             return send_file(
                 memory_file,

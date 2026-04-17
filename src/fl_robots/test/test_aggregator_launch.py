@@ -45,7 +45,7 @@ def generate_test_description():
         parameters=[{"min_robots": 2, "auto_aggregate": False}],
     )
     return (
-        launch.LaunchDescription([aggregator, launch_testing.actions.ReadyToTest()]),
+        launch.LaunchDescription([aggregator, launch_testing.actions.ReadyToTest()]),  # type: ignore[attr-defined]
         {"aggregator": aggregator},
     )
 

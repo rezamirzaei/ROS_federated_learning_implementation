@@ -33,7 +33,8 @@ def _extract_final_accuracy(report: dict[str, Any]) -> float | None:
     summary = report.get("summary") or {}
     final = summary.get("final_test_accuracy")
     if isinstance(final, dict):  # multi-seed summary
-        return float(final.get("mean"))
+        mean = final.get("mean")
+        return float(mean) if mean is not None else None
     if final is None:
         return None
     return float(final)
@@ -47,7 +48,8 @@ def _extract_wall(report: dict[str, Any]) -> float | None:
     summary = report.get("summary") or {}
     wall = summary.get("total_wall_seconds")
     if isinstance(wall, dict):
-        return float(wall.get("mean"))
+        mean = wall.get("mean")
+        return float(mean) if mean is not None else None
     return None if wall is None else float(wall)
 
 

@@ -20,6 +20,7 @@ from fl_robots.observability.metrics import (
     update_from_snapshot,
 )
 from fl_robots.persistence import MetricsStore
+from fl_robots.results_artifacts import LEGACY_SUMMARY_JSON, SUMMARY_JSON, resolve_summary_path
 
 # ── Controller ───────────────────────────────────────────────────────
 
@@ -107,6 +108,19 @@ def test_metrics_store_records_events(tmp_path: Path):
         assert json.loads(row[2]) == {"status": "registered"}
     finally:
         conn.close()
+
+
+def test_results_artifacts_prefers_summary_json_and_falls_back_to_legacy(tmp_path: Path):
+    results_dir = tmp_path / "results"
+    results_dir.mkdir()
+
+    legacy_path = results_dir / LEGACY_SUMMARY_JSON
+    legacy_path.write_text('{"source":"legacy"}', encoding="utf-8")
+    assert resolve_summary_path(results_dir) == legacy_path
+
+    preferred_path = results_dir / SUMMARY_JSON
+    preferred_path.write_text('{"source":"preferred"}', encoding="utf-8")
+    assert resolve_summary_path(results_dir) == preferred_path
 
 
 # ── Metrics ──────────────────────────────────────────────────────────

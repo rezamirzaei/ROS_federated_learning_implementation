@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import math
 import time
+from typing import Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -21,7 +22,7 @@ from .sim_models import (
     TrajectoryPoint,
 )
 
-__all__ = ["DistributedMPCPlanner", "MPCConfig", "MPCPlan"]
+__all__ = ["DistributedMPCPlanner", "MPCConfig", "MPCPlan", "MPCPlanner"]
 
 
 def _safe_atan2(y: float, x: float) -> float:
@@ -55,6 +56,25 @@ class MPCPlan(BaseModel):
     first_velocity: tuple[float, float]
     cost: float
     tracking_error: float = Field(..., ge=0.0)
+
+
+class MPCPlanner(Protocol):
+    """Common planner protocol shared by the grid-search and QP planners."""
+
+    horizon: int
+    dt: float
+
+    def solve_with_refs(
+        self,
+        robots: list[RobotState],
+        references: dict[str, list[tuple[float, float]]],
+    ) -> dict[str, MPCPlan]: ...
+
+    def diagnostics(
+        self,
+        tick: int,
+        robots: list[RobotState],
+    ) -> tuple[MPCSystemDiagnostic, list[MPCRobotDiagnostic]]: ...
 
 
 # ── Planner ───────────────────────────────────────────────────────────

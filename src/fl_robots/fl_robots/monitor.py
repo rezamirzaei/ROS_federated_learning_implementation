@@ -16,12 +16,19 @@ from __future__ import annotations
 
 import csv
 import json
-import os
 import time
 from collections import defaultdict
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
+from .results_artifacts import (
+    AGGREGATION_HISTORY_CSV,
+    AGGREGATION_HISTORY_JSON,
+    LEGACY_SUMMARY_JSON,
+    ROBOT_METRICS_JSON,
+    SUMMARY_JSON,
+)
 from .ros_compat import (
     DurabilityPolicy,
     HistoryPolicy,
@@ -61,8 +68,8 @@ class MonitorNode(Node):
         self.declare_parameter("output_dir", "/ros2_ws/results")
         self.declare_parameter("save_interval", 30.0)
 
-        self.output_dir = self.get_parameter("output_dir").value
-        os.makedirs(self.output_dir, exist_ok=True)
+        self.output_dir = Path(self.get_parameter("output_dir").value)
+        self.output_dir.mkdir(parents=True, exist_ok=True)
 
         self.get_logger().info("Initializing Training Monitor")
 
@@ -287,13 +294,13 @@ class MonitorNode(Node):
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
         # Save aggregation history
-        agg_file = os.path.join(self.output_dir, "aggregation_history.json")
-        with open(agg_file, "w") as f:
+        agg_file = self.output_dir / AGGREGATION_HISTORY_JSON
+        with agg_file.open("w", encoding="utf-8") as f:
             json.dump(self.aggregation_metrics, f, indent=2)
 
         # Save robot metrics
-        robot_file = os.path.join(self.output_dir, "robot_metrics.json")
-        with open(robot_file, "w") as f:
+        robot_file = self.output_dir / ROBOT_METRICS_JSON
+        with robot_file.open("w", encoding="utf-8") as f:
             json.dump(dict(self.robot_metrics), f, indent=2)
 
         # Save summary
@@ -308,13 +315,14 @@ class MonitorNode(Node):
             "saved_at": timestamp,
         }
 
-        summary_file = os.path.join(self.output_dir, "training_summary.json")
-        with open(summary_file, "w") as f:
-            json.dump(summary, f, indent=2)
+        for summary_name in (SUMMARY_JSON, LEGACY_SUMMARY_JSON):
+            summary_file = self.output_dir / summary_name
+            with summary_file.open("w", encoding="utf-8") as f:
+                json.dump(summary, f, indent=2)
 
         # Save CSV for easy analysis
         if self.aggregation_metrics:
-            csv_file = os.path.join(self.output_dir, "aggregation_history.csv")
+            csv_file = self.output_dir / AGGREGATION_HISTORY_CSV
             headers = [
                 "round",
                 "num_participants",
@@ -323,7 +331,7 @@ class MonitorNode(Node):
                 "mean_divergence",
                 "timestamp",
             ]
-            with open(csv_file, "w", newline="") as f:
+            with csv_file.open("w", newline="", encoding="utf-8") as f:
                 writer = csv.DictWriter(f, fieldnames=headers, extrasaction="ignore")
                 writer.writeheader()
                 for m in self.aggregation_metrics:
