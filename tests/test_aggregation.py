@@ -26,7 +26,7 @@ from fl_robots.models.simple_nn import (
 class TestSimpleNavigationNet:
     """Tests for SimpleNavigationNet model."""
 
-    def test_model_initialization(self):
+    def test_model_initialization(self) -> None:
         """Test model initializes correctly."""
         model = SimpleNavigationNet(input_dim=12, hidden_dim=64, output_dim=4)
         assert model is not None
@@ -34,7 +34,7 @@ class TestSimpleNavigationNet:
         assert model.hidden_dim == 64
         assert model.output_dim == 4
 
-    def test_forward_pass(self):
+    def test_forward_pass(self) -> None:
         """Test forward pass produces correct output shape."""
         model = SimpleNavigationNet(input_dim=12, hidden_dim=64, output_dim=4)
 
@@ -48,7 +48,7 @@ class TestSimpleNavigationNet:
         output_batch = model(x_batch)
         assert output_batch.shape == (32, 4)
 
-    def test_get_weights(self):
+    def test_get_weights(self) -> None:
         """Test weight extraction."""
         model = SimpleNavigationNet(input_dim=12, hidden_dim=64, output_dim=4)
         weights = model.get_weights()
@@ -60,7 +60,7 @@ class TestSimpleNavigationNet:
         for name, arr in weights.items():
             assert isinstance(arr, np.ndarray)
 
-    def test_set_weights(self):
+    def test_set_weights(self) -> None:
         """Test weight setting."""
         model1 = SimpleNavigationNet(input_dim=12, hidden_dim=64, output_dim=4)
         model2 = SimpleNavigationNet(input_dim=12, hidden_dim=64, output_dim=4)
@@ -76,7 +76,7 @@ class TestSimpleNavigationNet:
         for name in weights.keys():
             np.testing.assert_array_almost_equal(weights[name], weights2[name])
 
-    def test_flat_weights(self):
+    def test_flat_weights(self) -> None:
         """Test flattened weight operations."""
         model = SimpleNavigationNet(input_dim=12, hidden_dim=64, output_dim=4)
 
@@ -91,7 +91,7 @@ class TestSimpleNavigationNet:
         flat_new = model.get_flat_weights()
         np.testing.assert_array_almost_equal(flat_modified, flat_new, decimal=5)
 
-    def test_predict(self):
+    def test_predict(self) -> None:
         """Test prediction method."""
         model = SimpleNavigationNet(input_dim=12, hidden_dim=64, output_dim=4)
 
@@ -101,7 +101,7 @@ class TestSimpleNavigationNet:
         assert isinstance(action, int)
         assert 0 <= action < 4
 
-    def test_count_parameters(self):
+    def test_count_parameters(self) -> None:
         """Test parameter counting."""
         model = SimpleNavigationNet(input_dim=12, hidden_dim=64, output_dim=4)
 
@@ -116,7 +116,7 @@ class TestSimpleNavigationNet:
 class TestFederatedAveraging:
     """Tests for FedAvg algorithm."""
 
-    def test_equal_weights_averaging(self):
+    def test_equal_weights_averaging(self) -> None:
         """Test averaging with equal weights."""
         # Create simple weight dictionaries
         weights1 = {"layer1": np.array([1.0, 2.0, 3.0])}
@@ -127,7 +127,7 @@ class TestFederatedAveraging:
         expected = np.array([2.0, 3.0, 4.0])
         np.testing.assert_array_almost_equal(averaged["layer1"], expected)
 
-    def test_weighted_averaging(self):
+    def test_weighted_averaging(self) -> None:
         """Test averaging with different sample counts."""
         weights1 = {"layer1": np.array([1.0, 2.0])}
         weights2 = {"layer1": np.array([5.0, 6.0])}
@@ -139,7 +139,7 @@ class TestFederatedAveraging:
         expected = np.array([2.0, 3.0])
         np.testing.assert_array_almost_equal(averaged["layer1"], expected)
 
-    def test_multi_layer_averaging(self):
+    def test_multi_layer_averaging(self) -> None:
         """Test averaging with multiple layers."""
         weights1 = {
             "fc1.weight": np.ones((4, 3)),
@@ -158,12 +158,12 @@ class TestFederatedAveraging:
         np.testing.assert_array_almost_equal(averaged["fc1.bias"], np.ones(4))
         np.testing.assert_array_almost_equal(averaged["fc2.weight"], np.ones((2, 4)) * 3)
 
-    def test_empty_list_raises_error(self):
+    def test_empty_list_raises_error(self) -> None:
         """Test that empty list raises error."""
         with pytest.raises(ValueError):
             federated_averaging([])
 
-    def test_single_client(self):
+    def test_single_client(self) -> None:
         """Test averaging with single client returns same weights."""
         weights = {"layer1": np.array([1.0, 2.0, 3.0])}
 
@@ -171,7 +171,7 @@ class TestFederatedAveraging:
 
         np.testing.assert_array_equal(averaged["layer1"], weights["layer1"])
 
-    def test_batch_norm_buffers_are_not_aggregated(self):
+    def test_batch_norm_buffers_are_not_aggregated(self) -> None:
         """FedAvg must leave BN running stats local instead of averaging them."""
         weights1 = {
             "fc1.weight": np.array([[1.0, 2.0]], dtype=np.float32),
@@ -186,7 +186,7 @@ class TestFederatedAveraging:
             "bn1.num_batches_tracked": np.array(21, dtype=np.int64),
         }
 
-        averaged = federated_averaging([weights1, weights2], sample_counts=[3, 1])
+        averaged = federated_averaging([weights1, weights2], sample_counts=[3, 1])  # type: ignore[list-item]
 
         np.testing.assert_array_almost_equal(
             averaged["fc1.weight"], np.array([[2.0, 3.0]], dtype=np.float32)
@@ -199,7 +199,7 @@ class TestFederatedAveraging:
 class TestGradientDivergence:
     """Tests for gradient divergence computation."""
 
-    def test_zero_divergence_same_weights(self):
+    def test_zero_divergence_same_weights(self) -> None:
         """Test divergence is zero when weights match global."""
         global_weights = {"layer1": np.array([1.0, 2.0, 3.0])}
         local_weights = [
@@ -212,7 +212,7 @@ class TestGradientDivergence:
         assert len(divergences) == 2
         assert all(d == 0.0 for d in divergences)
 
-    def test_positive_divergence(self):
+    def test_positive_divergence(self) -> None:
         """Test divergence is positive when weights differ."""
         global_weights = {"layer1": np.array([0.0, 0.0, 0.0])}
         local_weights = [
@@ -226,7 +226,7 @@ class TestGradientDivergence:
         assert abs(divergences[0] - 1.0) < 1e-6
         assert abs(divergences[1] - 5.0) < 1e-6
 
-    def test_weight_l2_drift_alias_matches_legacy_name(self):
+    def test_weight_l2_drift_alias_matches_legacy_name(self) -> None:
         """The renamed helper should stay backward-compatible for callers/tests."""
         global_weights = {"layer1": np.array([0.0, 0.0, 0.0])}
         local_weights = [{"layer1": np.array([1.0, 0.0, 0.0])}]
@@ -239,7 +239,7 @@ class TestGradientDivergence:
 class TestModelIntegration:
     """Integration tests for model + federated averaging."""
 
-    def test_full_federated_round(self):
+    def test_full_federated_round(self) -> None:
         """Test a complete federated learning round."""
         # Create 3 models
         models = [SimpleNavigationNet(input_dim=12, hidden_dim=32, output_dim=4) for _ in range(3)]
@@ -265,7 +265,7 @@ class TestModelIntegration:
         output = global_model(x)
         assert output.shape == (1, 4)
 
-    def test_convergence_simulation(self):
+    def test_convergence_simulation(self) -> None:
         """Simulate multiple rounds of federated learning."""
         # This is a simplified simulation
         num_rounds = 5

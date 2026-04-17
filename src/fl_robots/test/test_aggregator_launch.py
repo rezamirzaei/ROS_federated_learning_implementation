@@ -20,11 +20,10 @@ The test:
   5. Asserts the round counter advanced.
 """
 
-from __future__ import annotations
-
 import json
 import time
 import unittest
+from typing import Any
 
 import launch
 import launch_ros.actions
@@ -36,7 +35,7 @@ from std_msgs.msg import String
 
 
 @pytest.mark.launch_test
-def generate_test_description():
+def generate_test_description() -> Any:
     aggregator = launch_ros.actions.Node(
         package="fl_robots",
         executable="aggregator",
@@ -52,17 +51,17 @@ def generate_test_description():
 
 class TestAggregatorLifecycle(unittest.TestCase):
     @classmethod
-    def setUpClass(cls):
+    def setUpClass(cls) -> None:
         rclpy.init()
 
     @classmethod
-    def tearDownClass(cls):
+    def tearDownClass(cls) -> None:
         rclpy.shutdown()
 
-    def setUp(self):
+    def setUp(self) -> None:
         self.node = Node("aggregator_test_harness")
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         self.node.destroy_node()
 
     def _wait_for_topic(self, topic: str, timeout: float = 10.0) -> bool:
@@ -73,20 +72,20 @@ class TestAggregatorLifecycle(unittest.TestCase):
             rclpy.spin_once(self.node, timeout_sec=0.2)
         return False
 
-    def test_global_model_topic_appears(self):
+    def test_global_model_topic_appears(self) -> None:
         """Within 10 s of startup, /fl/global_model must be advertised."""
         self.assertTrue(
             self._wait_for_topic("/fl/global_model"),
             "aggregator never advertised /fl/global_model",
         )
 
-    def test_aggregation_metrics_topic_appears(self):
+    def test_aggregation_metrics_topic_appears(self) -> None:
         self.assertTrue(
             self._wait_for_topic("/fl/aggregation_metrics"),
             "aggregator never advertised /fl/aggregation_metrics",
         )
 
-    def test_round_advances_on_weight_submission(self):
+    def test_round_advances_on_weight_submission(self) -> None:
         """Submit fake weights and verify the round counter advances."""
         # Registration.
         status_pub = self.node.create_publisher(String, "/fl/robot_status", 10)
@@ -100,7 +99,7 @@ class TestAggregatorLifecycle(unittest.TestCase):
         # Subscribe to aggregation metrics to observe the round increment.
         received: list[dict] = []
 
-        def _cb(msg):
+        def _cb(msg: Any) -> None:
             try:
                 received.append(json.loads(msg.data))
             except Exception:
@@ -143,5 +142,5 @@ class TestAggregatorLifecycle(unittest.TestCase):
 
 @launch_testing.post_shutdown_test()
 class TestCleanShutdown(unittest.TestCase):
-    def test_exit_code(self, proc_info, aggregator):
+    def test_exit_code(self, proc_info: Any, aggregator: Any) -> None:
         launch_testing.asserts.assertExitCodes(proc_info, process=aggregator)

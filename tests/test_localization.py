@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import random
+from typing import Any
 
 import pytest
 
@@ -22,11 +23,11 @@ def _fixed_sensors() -> dict[str, tuple[float, float]]:
     }
 
 
-def _fully_connected(ids):
+def _fully_connected(ids: Any) -> dict[Any, list[Any]]:
     return {i: [j for j in ids if j != i] for i in ids}
 
 
-def test_static_target_converges_without_noise():
+def test_static_target_converges_without_noise() -> None:
     sensors = _fixed_sensors()
     est = DistributedTOAEstimator(
         robot_ids=list(sensors),
@@ -51,7 +52,7 @@ def test_static_target_converges_without_noise():
     assert res.consensus_gap < 0.15
 
 
-def test_consensus_gap_decreases_on_static_target():
+def test_consensus_gap_decreases_on_static_target() -> None:
     sensors = _fixed_sensors()
     est = DistributedTOAEstimator(
         robot_ids=list(sensors),
@@ -74,7 +75,7 @@ def test_consensus_gap_decreases_on_static_target():
     assert late < 0.3 * early, f"gap failed to shrink: early={early:.3f}, late={late:.3f}"
 
 
-def test_moving_target_bounded_rmse():
+def test_moving_target_bounded_rmse() -> None:
     sensors = _fixed_sensors()
     est = DistributedTOAEstimator(
         robot_ids=list(sensors),
@@ -109,7 +110,7 @@ def test_moving_target_bounded_rmse():
     assert mean_rmse < 0.6, f"tracking RMSE too large: {mean_rmse}"
 
 
-def test_dual_variables_stay_bounded():
+def test_dual_variables_stay_bounded() -> None:
     sensors = _fixed_sensors()
     est = DistributedTOAEstimator(
         robot_ids=list(sensors),
@@ -128,7 +129,7 @@ def test_dual_variables_stay_bounded():
     assert math.isfinite(max_lam) and math.isfinite(max_lam) and max_lam < 50.0
 
 
-def test_predicted_target_prior_accelerates_convergence():
+def test_predicted_target_prior_accelerates_convergence() -> None:
     """With a good motion-model prior, the estimator locks on faster."""
     sensors = _fixed_sensors()
     target = (0.5, -0.25)
@@ -159,7 +160,7 @@ def test_predicted_target_prior_accelerates_convergence():
     )
 
 
-def test_predictor_tracks_constant_velocity_target():
+def test_predictor_tracks_constant_velocity_target() -> None:
     """The α-β predictor should follow a constant-velocity target closely."""
     from fl_robots.localization import ConstantVelocityTargetPredictor, PredictorConfig
 

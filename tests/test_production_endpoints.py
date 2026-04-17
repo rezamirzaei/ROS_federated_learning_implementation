@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Iterator
+from typing import Any
 
 import pytest
 from fl_robots.controller import COMMAND_NAMES
@@ -11,7 +13,7 @@ from fl_robots.standalone_web import OPENAPI_SCHEMA, create_app
 
 
 @pytest.fixture
-def running_app():
+def running_app() -> Iterator[Any]:
     sim = SimulationEngine(num_robots=2, auto_start=True)
     # Give the background thread one real tick so readiness flips green.
     time.sleep(0.25)
@@ -21,7 +23,7 @@ def running_app():
 
 
 @pytest.fixture
-def paused_app():
+def paused_app() -> Iterator[Any]:
     sim = SimulationEngine(num_robots=2, auto_start=False)
     app = create_app(sim)
     yield app, sim
@@ -31,7 +33,7 @@ def paused_app():
 # ── Health / readiness ───────────────────────────────────────────────
 
 
-def test_health_is_live_even_when_sim_paused(paused_app):
+def test_health_is_live_even_when_sim_paused(paused_app: Any) -> None:
     app, _ = paused_app
     client = app.test_client()
     rv = client.get("/api/health")
@@ -39,7 +41,7 @@ def test_health_is_live_even_when_sim_paused(paused_app):
     assert rv.get_json()["ok"] is True
 
 
-def test_ready_is_503_when_sim_not_running(paused_app):
+def test_ready_is_503_when_sim_not_running(paused_app: Any) -> None:
     app, _ = paused_app
     client = app.test_client()
     rv = client.get("/api/ready")
@@ -49,7 +51,7 @@ def test_ready_is_503_when_sim_not_running(paused_app):
     assert body["running"] is False
 
 
-def test_ready_is_200_when_sim_stepping(running_app):
+def test_ready_is_200_when_sim_stepping(running_app: Any) -> None:
     app, _ = running_app
     client = app.test_client()
     rv = client.get("/api/ready")
@@ -63,7 +65,7 @@ def test_ready_is_200_when_sim_stepping(running_app):
 # ── OpenAPI ─────────────────────────────────────────────────────────
 
 
-def test_openapi_schema_is_served_and_valid_structure(paused_app):
+def test_openapi_schema_is_served_and_valid_structure(paused_app: Any) -> None:
     app, _ = paused_app
     client = app.test_client()
     rv = client.get("/api/openapi.json")
@@ -80,7 +82,7 @@ def test_openapi_schema_is_served_and_valid_structure(paused_app):
     assert "trigger_disturbance" not in allowed
 
 
-def test_openapi_constant_matches_endpoint(paused_app):
+def test_openapi_constant_matches_endpoint(paused_app: Any) -> None:
     """The in-memory constant and the served schema must not diverge."""
     app, _ = paused_app
     rv = app.test_client().get("/api/openapi.json")
@@ -90,7 +92,7 @@ def test_openapi_constant_matches_endpoint(paused_app):
 # ── Rate limiting ────────────────────────────────────────────────────
 
 
-def test_command_endpoint_is_rate_limited(paused_app, monkeypatch, csrf_headers):
+def test_command_endpoint_is_rate_limited(paused_app: Any, monkeypatch: Any, csrf_headers: Any) -> None:
     """Rapid bursts beyond the per-IP cap must return 429."""
     # Shrink the window so the test is fast and deterministic.
     from fl_robots import standalone_web

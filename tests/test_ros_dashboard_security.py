@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import threading
 from pathlib import Path
+from typing import Any
 
 from fl_robots.web_dashboard import build_dashboard_app
 
@@ -45,13 +46,13 @@ class _FakeDashboardNode:
         return {"success": True, "message": "updated"}
 
 
-def _client(tmp_path: Path):
+def _client(tmp_path: Path) -> tuple[Any, Any]:
     node = _FakeDashboardNode(tmp_path)
     app, _socketio = build_dashboard_app(node)
     return node, app.test_client()
 
 
-def test_dashboard_security_headers_and_csp(tmp_path: Path):
+def test_dashboard_security_headers_and_csp(tmp_path: Path) -> None:
     _node, client = _client(tmp_path)
     resp = client.get("/")
     assert resp.status_code == 200
@@ -65,14 +66,14 @@ def test_dashboard_security_headers_and_csp(tmp_path: Path):
     assert client.get_cookie("fl_robots_dashboard_csrf_token") is not None
 
 
-def test_dashboard_command_requires_csrf(tmp_path: Path):
+def test_dashboard_command_requires_csrf(tmp_path: Path) -> None:
     node, client = _client(tmp_path)
     resp = client.post("/api/command", json={"command": "start_training"})
     assert resp.status_code == 403
     assert node.commands == []
 
 
-def test_dashboard_command_accepts_valid_csrf(tmp_path: Path, csrf_headers):
+def test_dashboard_command_accepts_valid_csrf(tmp_path: Path, csrf_headers: Any) -> None:
     node, client = _client(tmp_path)
     headers = csrf_headers(client, cookie_name="fl_robots_dashboard_csrf_token")
     resp = client.post("/api/command", json={"command": "start_training"}, headers=headers)
@@ -80,7 +81,7 @@ def test_dashboard_command_accepts_valid_csrf(tmp_path: Path, csrf_headers):
     assert node.commands == ["start_training"]
 
 
-def test_dashboard_command_requires_bearer_when_token_set(tmp_path: Path, monkeypatch, csrf_headers):
+def test_dashboard_command_requires_bearer_when_token_set(tmp_path: Path, monkeypatch: Any, csrf_headers: Any) -> None:
     monkeypatch.setenv("FL_ROBOTS_API_TOKEN", "dash-secret")
     node, client = _client(tmp_path)
     headers = csrf_headers(client, cookie_name="fl_robots_dashboard_csrf_token")
@@ -98,7 +99,7 @@ def test_dashboard_command_requires_bearer_when_token_set(tmp_path: Path, monkey
     assert node.commands == ["start_training"]
 
 
-def test_dashboard_template_has_no_inline_handlers(tmp_path: Path):
+def test_dashboard_template_has_no_inline_handlers(tmp_path: Path) -> None:
     _node, client = _client(tmp_path)
     html = client.get("/").data.decode("utf-8")
     assert "onclick=" not in html

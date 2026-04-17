@@ -10,6 +10,7 @@ inspect published messages.
 from __future__ import annotations
 
 import json
+from typing import Any
 
 import numpy as np
 import pytest
@@ -17,7 +18,7 @@ import pytest
 # ── Aggregator ───────────────────────────────────────────────────────
 
 
-def test_aggregator_constructs_and_wires_topics(fake_ros):
+def test_aggregator_constructs_and_wires_topics(fake_ros: Any) -> None:
     from fl_robots.aggregator import AggregatorNode
 
     node = AggregatorNode()
@@ -30,7 +31,7 @@ def test_aggregator_constructs_and_wires_topics(fake_ros):
     assert len(node.timers) >= 1
 
 
-def test_aggregator_registers_robot_via_status_topic(fake_ros):
+def test_aggregator_registers_robot_via_status_topic(fake_ros: Any) -> None:
     """A registration heartbeat must create a tracked robot entry."""
     from fl_robots.aggregator import AggregatorNode
 
@@ -47,7 +48,7 @@ def test_aggregator_registers_robot_via_status_topic(fake_ros):
     assert "/fl/robot_A/model_weights" in node.subscriptions
 
 
-def test_aggregator_collects_weights_and_aggregates(fake_ros):
+def test_aggregator_collects_weights_and_aggregates(fake_ros: Any) -> None:
     """Delivering enough weight updates should trigger a FedAvg + publish."""
     from fl_robots.aggregator import AggregatorNode
 
@@ -55,7 +56,7 @@ def test_aggregator_collects_weights_and_aggregates(fake_ros):
     node.min_robots = 2  # drive the threshold down for the test
 
     class _Msg:
-        def __init__(self, d):
+        def __init__(self, d: Any) -> None:
             self.data = d
 
     # Register two robots so their weight topics exist.
@@ -89,7 +90,7 @@ def test_aggregator_collects_weights_and_aggregates(fake_ros):
     assert len(node.publishers["/fl/global_model"].messages) >= 1
 
 
-def test_aggregator_health_check_marks_stale_robots(fake_ros):
+def test_aggregator_health_check_marks_stale_robots(fake_ros: Any) -> None:
     from fl_robots.aggregator import AggregatorNode
 
     node = AggregatorNode()
@@ -108,7 +109,7 @@ def test_aggregator_health_check_marks_stale_robots(fake_ros):
 # ── Coordinator ──────────────────────────────────────────────────────
 
 
-def test_coordinator_constructs_and_wires_topics(fake_ros):
+def test_coordinator_constructs_and_wires_topics(fake_ros: Any) -> None:
     from fl_robots.coordinator import CoordinatorNode
 
     node = CoordinatorNode()
@@ -117,7 +118,7 @@ def test_coordinator_constructs_and_wires_topics(fake_ros):
     assert "/fl/robot_status" in node.subscriptions
 
 
-def test_coordinator_transitions_through_states(fake_ros):
+def test_coordinator_transitions_through_states(fake_ros: Any) -> None:
     from fl_robots.coordinator import CoordinatorNode, TrainingState
 
     node = CoordinatorNode()
@@ -134,7 +135,7 @@ def test_coordinator_transitions_through_states(fake_ros):
     assert payload["state"] == "WAITING_FOR_ROBOTS"
 
 
-def test_coordinator_handles_robot_status_updates(fake_ros):
+def test_coordinator_handles_robot_status_updates(fake_ros: Any) -> None:
     from fl_robots.coordinator import CoordinatorNode
 
     node = CoordinatorNode()
@@ -149,7 +150,7 @@ def test_coordinator_handles_robot_status_updates(fake_ros):
 # ── Robot Agent ──────────────────────────────────────────────────────
 
 
-def test_robot_agent_publishes_heartbeat_on_timer(fake_ros):
+def test_robot_agent_publishes_heartbeat_on_timer(fake_ros: Any) -> None:
     from fl_robots.robot_agent import RobotAgentNode
 
     node = RobotAgentNode()
@@ -163,7 +164,7 @@ def test_robot_agent_publishes_heartbeat_on_timer(fake_ros):
     assert len(status_msgs) >= 1
 
 
-def test_robot_agent_consumes_global_model(fake_ros):
+def test_robot_agent_consumes_global_model(fake_ros: Any) -> None:
     """Publishing a global model should update the robot's local weights."""
     from fl_robots.robot_agent import RobotAgentNode
 
@@ -181,13 +182,13 @@ def test_robot_agent_consumes_global_model(fake_ros):
     assert node.training_round == 5
 
 
-def test_robot_agent_reacts_to_training_command(fake_ros):
+def test_robot_agent_reacts_to_training_command(fake_ros: Any) -> None:
     from fl_robots.robot_agent import RobotAgentNode
 
     node = RobotAgentNode()
 
     class _Msg:
-        def __init__(self, d):
+        def __init__(self, d: Any) -> None:
             self.data = d
 
     fake_ros.publish(

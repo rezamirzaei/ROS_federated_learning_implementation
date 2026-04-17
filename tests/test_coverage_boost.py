@@ -14,13 +14,14 @@ import os
 import tempfile
 import time
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 
 # ── observability.logging ──────────────────────────────────────────────
 
 
-def test_configure_logging_plain_mode_idempotent():
+def test_configure_logging_plain_mode_idempotent() -> None:
     from fl_robots.observability.logging import configure_logging, get_logger
 
     configure_logging(level="DEBUG", json_logs=False)
@@ -35,7 +36,7 @@ def test_configure_logging_plain_mode_idempotent():
     log.info("coverage test message")
 
 
-def test_configure_logging_env_var_takes_over(monkeypatch):
+def test_configure_logging_env_var_takes_over(monkeypatch: Any) -> None:
     from fl_robots.observability.logging import configure_logging
 
     monkeypatch.setenv("FL_ROBOTS_LOG_LEVEL", "WARNING")
@@ -47,7 +48,7 @@ def test_configure_logging_env_var_takes_over(monkeypatch):
 # ── observability.tracing ──────────────────────────────────────────────
 
 
-def test_tracing_is_noop_when_disabled(monkeypatch):
+def test_tracing_is_noop_when_disabled(monkeypatch: Any) -> None:
     monkeypatch.delenv("FL_ROBOTS_OTEL", raising=False)
     # Force re-import so module-level state resets.
     import importlib
@@ -63,7 +64,7 @@ def test_tracing_is_noop_when_disabled(monkeypatch):
         assert ctx is None
 
 
-def test_tracing_setup_returns_false_without_dep(monkeypatch):
+def test_tracing_setup_returns_false_without_dep(monkeypatch: Any) -> None:
     """With FL_ROBOTS_OTEL=1 but the opentelemetry packages absent,
     maybe_setup_tracing must still return False and not raise."""
     monkeypatch.setenv("FL_ROBOTS_OTEL", "1")
@@ -93,7 +94,7 @@ def test_tracing_setup_returns_false_without_dep(monkeypatch):
 # ── coordinator state transitions ──────────────────────────────────────
 
 
-def test_coordinator_walks_through_all_states(fake_ros):
+def test_coordinator_walks_through_all_states(fake_ros: Any) -> None:
     from fl_robots.coordinator import CoordinatorNode, TrainingState
 
     node = CoordinatorNode()
@@ -116,7 +117,7 @@ def test_coordinator_walks_through_all_states(fake_ros):
     assert "state" in payload and "timestamp" in payload
 
 
-def test_coordinator_send_command_publishes(fake_ros):
+def test_coordinator_send_command_publishes(fake_ros: Any) -> None:
     from fl_robots.coordinator import CoordinatorNode
 
     node = CoordinatorNode()
@@ -125,13 +126,13 @@ def test_coordinator_send_command_publishes(fake_ros):
     assert msgs and json.loads(msgs[-1].data)["command"] == "start_training"
 
 
-def test_coordinator_counts_active_robots(fake_ros):
+def test_coordinator_counts_active_robots(fake_ros: Any) -> None:
     from fl_robots.coordinator import CoordinatorNode
 
     node = CoordinatorNode()
 
     class _Msg:
-        def __init__(self, d):
+        def __init__(self, d: Any) -> None:
             self.data = d
 
     for rid in ("a", "b", "c"):
@@ -144,7 +145,7 @@ def test_coordinator_counts_active_robots(fake_ros):
 # ── monitor.py ─────────────────────────────────────────────────────────
 
 
-def test_monitor_records_registration_and_metrics(fake_ros, tmp_path):
+def test_monitor_records_registration_and_metrics(fake_ros: Any, tmp_path: Any) -> None:
     from fl_robots.monitor import MonitorNode
 
     # Override the hard-coded /ros2_ws/results default before the node
@@ -153,7 +154,7 @@ def test_monitor_records_registration_and_metrics(fake_ros, tmp_path):
     node = MonitorNode()
 
     class _Msg:
-        def __init__(self, d):
+        def __init__(self, d: Any) -> None:
             self.data = d
 
     # Send a registration, a status update, and an aggregation metric.
@@ -214,14 +215,14 @@ def test_monitor_records_registration_and_metrics(fake_ros, tmp_path):
 # ── digital_twin ───────────────────────────────────────────────────────
 
 
-def test_digital_twin_updates_state_from_status_callbacks(fake_ros, tmp_path):
+def test_digital_twin_updates_state_from_status_callbacks(fake_ros: Any, tmp_path: Any) -> None:
     from fl_robots.digital_twin import DigitalTwinNode
 
     fake_ros.parameter_overrides["output_dir"] = str(tmp_path)
     node = DigitalTwinNode()
 
     class _Msg:
-        def __init__(self, d):
+        def __init__(self, d: Any) -> None:
             self.data = d
 
     # Registration + status + aggregation + coordinator update.
@@ -277,7 +278,7 @@ def test_digital_twin_updates_state_from_status_callbacks(fake_ros, tmp_path):
 # ── robot_agent topic-training & inference paths ───────────────────────
 
 
-def test_robot_agent_local_training_updates_metrics(fake_ros):
+def test_robot_agent_local_training_updates_metrics(fake_ros: Any) -> None:
     from fl_robots.robot_agent import RobotAgentNode
 
     node = RobotAgentNode()
@@ -299,7 +300,7 @@ def test_robot_agent_local_training_updates_metrics(fake_ros):
     assert payload["round"] == 7
 
 
-def test_robot_agent_inference_returns_action_and_confidence(fake_ros):
+def test_robot_agent_inference_returns_action_and_confidence(fake_ros: Any) -> None:
     from fl_robots.robot_agent import RobotAgentNode
 
     node = RobotAgentNode()
@@ -312,7 +313,7 @@ def test_robot_agent_inference_returns_action_and_confidence(fake_ros):
     assert 0.0 <= confidence <= 1.0
 
 
-def test_robot_agent_history_truncation(fake_ros):
+def test_robot_agent_history_truncation(fake_ros: Any) -> None:
     from fl_robots.robot_agent import RobotAgentNode
 
     node = RobotAgentNode()
@@ -325,7 +326,7 @@ def test_robot_agent_history_truncation(fake_ros):
     assert node.accuracy_history[-1] == 11.0
 
 
-def test_synthetic_data_generator_seed_is_stable():
+def test_synthetic_data_generator_seed_is_stable() -> None:
     from fl_robots.robot_agent import SyntheticDataGenerator
     from fl_robots.utils.determinism import derive_seed
 
@@ -343,7 +344,7 @@ def test_synthetic_data_generator_seed_is_stable():
 # ── aggregator edge cases ──────────────────────────────────────────────
 
 
-def test_aggregator_refuses_aggregation_below_min_robots(fake_ros):
+def test_aggregator_refuses_aggregation_below_min_robots(fake_ros: Any) -> None:
     from fl_robots.aggregator import AggregatorNode
 
     node = AggregatorNode()
@@ -352,7 +353,7 @@ def test_aggregator_refuses_aggregation_below_min_robots(fake_ros):
     assert node._perform_aggregation() is None
 
 
-def test_aggregator_history_is_bounded(fake_ros):
+def test_aggregator_history_is_bounded(fake_ros: Any) -> None:
     from fl_robots.aggregator import AggregatorNode
 
     node = AggregatorNode()
@@ -360,7 +361,7 @@ def test_aggregator_history_is_bounded(fake_ros):
     node.min_robots = 1
 
     class _Msg:
-        def __init__(self, d):
+        def __init__(self, d: Any) -> None:
             self.data = d
 
     fake_ros.publish(
@@ -389,14 +390,14 @@ def test_aggregator_history_is_bounded(fake_ros):
     assert len(node.aggregation_history) <= node._max_history
 
 
-def test_aggregator_tracking_stale_round_discards_weights(fake_ros):
+def test_aggregator_tracking_stale_round_discards_weights(fake_ros: Any) -> None:
     from fl_robots.aggregator import AggregatorNode
 
     node = AggregatorNode()
     node.current_round = 5  # pretend we've already advanced
 
     class _Msg:
-        def __init__(self, d):
+        def __init__(self, d: Any) -> None:
             self.data = d
 
     fake_ros.publish(
@@ -425,7 +426,7 @@ def test_aggregator_tracking_stale_round_discards_weights(fake_ros):
 # ── models.simple_nn extras ────────────────────────────────────────────
 
 
-def test_simple_nn_flat_weights_roundtrip():
+def test_simple_nn_flat_weights_roundtrip() -> None:
     import torch
     from fl_robots.models import SimpleNavigationNet
 

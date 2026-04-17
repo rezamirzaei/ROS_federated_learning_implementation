@@ -11,12 +11,13 @@ wiring is broken.
 from __future__ import annotations
 
 import re
+from typing import Any
 
 from fl_robots.simulation import SimulationEngine
 from fl_robots.standalone_web import create_app
 
 
-def test_command_lifecycle_and_metrics_scrape(csrf_headers):
+def test_command_lifecycle_and_metrics_scrape(csrf_headers: Any) -> None:
     sim = SimulationEngine(num_robots=3, auto_start=False)
     app = create_app(sim)
     client = app.test_client()
@@ -53,7 +54,7 @@ def test_command_lifecycle_and_metrics_scrape(csrf_headers):
         sim.shutdown()
 
 
-def test_rate_limiter_triggers_after_burst(monkeypatch, csrf_headers):
+def test_rate_limiter_triggers_after_burst(monkeypatch: Any, csrf_headers: Any) -> None:
     monkeypatch.setenv("FL_ROBOTS_RATE_WINDOW_S", "60")
     monkeypatch.setenv("FL_ROBOTS_RATE_MAX_HITS", "3")
     # Reload to pick up the new env-derived defaults.
@@ -79,7 +80,7 @@ def test_rate_limiter_triggers_after_burst(monkeypatch, csrf_headers):
         sim.shutdown()
 
 
-def test_auth_required_when_token_set(monkeypatch):
+def test_auth_required_when_token_set(monkeypatch: Any) -> None:
     monkeypatch.setenv("FL_ROBOTS_API_TOKEN", "s3cret")
     sim = SimulationEngine(num_robots=2, auto_start=False)
     app = create_app(sim)

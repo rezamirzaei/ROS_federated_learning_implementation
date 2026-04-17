@@ -6,6 +6,8 @@ so an accidental rewrite of ``create_app`` can't silently strip them.
 
 from __future__ import annotations
 
+from typing import Any
+
 from fl_robots.simulation import SimulationEngine
 from fl_robots.standalone_web import create_app
 
@@ -18,13 +20,13 @@ _EXPECTED_HEADERS = {
 }
 
 
-def _client():
+def _client() -> tuple[Any, Any]:
     sim = SimulationEngine(num_robots=2, auto_start=False)
     app = create_app(sim)
     return sim, app.test_client()
 
 
-def test_security_headers_present_on_index():
+def test_security_headers_present_on_index() -> None:
     sim, client = _client()
     try:
         resp = client.get("/")
@@ -39,7 +41,7 @@ def test_security_headers_present_on_index():
         sim.shutdown()
 
 
-def test_security_headers_present_on_json_api():
+def test_security_headers_present_on_json_api() -> None:
     sim, client = _client()
     try:
         resp = client.get("/api/status")
@@ -50,7 +52,7 @@ def test_security_headers_present_on_json_api():
         sim.shutdown()
 
 
-def test_security_headers_present_on_error_response(csrf_headers):
+def test_security_headers_present_on_error_response(csrf_headers: Any) -> None:
     """Even 4xx responses must carry the headers — they're user-facing."""
     sim, client = _client()
     try:
@@ -62,7 +64,7 @@ def test_security_headers_present_on_error_response(csrf_headers):
         sim.shutdown()
 
 
-def test_csp_env_override(monkeypatch):
+def test_csp_env_override(monkeypatch: Any) -> None:
     """FL_ROBOTS_CSP should override the default policy."""
     monkeypatch.setenv("FL_ROBOTS_CSP", "default-src 'none'")
     sim = SimulationEngine(num_robots=2, auto_start=False)

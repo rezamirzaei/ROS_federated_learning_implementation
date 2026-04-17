@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from pathlib import Path
+from typing import Any
 
 import pytest
 from fl_robots.controller import (
@@ -31,7 +32,7 @@ from fl_robots.results_artifacts import LEGACY_SUMMARY_JSON, SUMMARY_JSON, resol
 # ── Controller ───────────────────────────────────────────────────────
 
 
-def _sample_value(metric, sample_name: str) -> float:
+def _sample_value(metric: Any, sample_name: str) -> float:
     for family in metric.collect():
         for sample in family.samples:
             if sample.name == sample_name and not sample.labels:
@@ -39,28 +40,28 @@ def _sample_value(metric, sample_name: str) -> float:
     raise AssertionError(f"missing sample {sample_name}")
 
 
-def test_all_valid_commands_pass_validator():
+def test_all_valid_commands_pass_validator() -> None:
     for name in COMMAND_NAMES:
         assert is_valid_command(name)
         assert validate_command(name) == name
 
 
-def test_invalid_command_rejected():
+def test_invalid_command_rejected() -> None:
     with pytest.raises(ValueError, match="Unknown command"):
         validate_command("self_destruct")
 
 
-def test_command_request_rejects_extra_fields():
+def test_command_request_rejects_extra_fields() -> None:
     with pytest.raises(Exception):
         CommandRequest.model_validate({"command": "step", "extra": 1})
 
 
-def test_command_request_rejects_unknown_command():
+def test_command_request_rejects_unknown_command() -> None:
     with pytest.raises(Exception):
         CommandRequest.model_validate({"command": "nope"})
 
 
-def test_command_request_accepts_known_command():
+def test_command_request_accepts_known_command() -> None:
     cmd = CommandRequest.model_validate({"command": "step"})
     assert cmd.command == "step"
 
@@ -68,7 +69,7 @@ def test_command_request_accepts_known_command():
 # ── Persistence ──────────────────────────────────────────────────────
 
 
-def test_metrics_store_roundtrips_rounds(tmp_path: Path):
+def test_metrics_store_roundtrips_rounds(tmp_path: Path) -> None:
     db = MetricsStore(tmp_path / "run.sqlite")
     db.record_round(
         {
@@ -98,7 +99,7 @@ def test_metrics_store_roundtrips_rounds(tmp_path: Path):
     db.close()
 
 
-def test_metrics_store_records_robot_metrics(tmp_path: Path):
+def test_metrics_store_records_robot_metrics(tmp_path: Path) -> None:
     with MetricsStore(tmp_path / "run.sqlite") as db:
         db.record_robot_metric("robot_1", 1, loss=0.8, accuracy=70.0, tracking_error=0.12)
         db.record_robot_metric("robot_1", 2, loss=0.5, accuracy=85.0, tracking_error=0.06)
@@ -107,7 +108,7 @@ def test_metrics_store_records_robot_metrics(tmp_path: Path):
         assert rows[0]["round_id"] == 2
 
 
-def test_metrics_store_records_events(tmp_path: Path):
+def test_metrics_store_records_events(tmp_path: Path) -> None:
     path = tmp_path / "run.sqlite"
     with MetricsStore(path) as db:
         db.record_event("/fl/robot_status", "robot_1", {"status": "registered"})
@@ -124,7 +125,7 @@ def test_metrics_store_records_events(tmp_path: Path):
         conn.close()
 
 
-def test_results_artifacts_prefers_summary_json_and_falls_back_to_legacy(tmp_path: Path):
+def test_results_artifacts_prefers_summary_json_and_falls_back_to_legacy(tmp_path: Path) -> None:
     results_dir = tmp_path / "results"
     results_dir.mkdir()
 
@@ -140,7 +141,7 @@ def test_results_artifacts_prefers_summary_json_and_falls_back_to_legacy(tmp_pat
 # ── Metrics ──────────────────────────────────────────────────────────
 
 
-def test_update_from_snapshot_populates_gauges():
+def test_update_from_snapshot_populates_gauges() -> None:
     snapshot = {
         "system": {
             "controller_state": "RUNNING",

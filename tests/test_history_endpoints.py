@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from typing import Any
+
 import pytest
 from fl_robots.simulation import SimulationEngine
 from fl_robots.standalone_web import MPC_EXPLAINER, create_app
 
 
 @pytest.fixture
-def client():
+def client() -> Iterator[Any]:
     sim = SimulationEngine(num_robots=3, tick_interval=0.5, auto_start=False)
     # Drive the sim forward so history buffers fill. Enable training so
     # we also get global-history samples at the aggregation tick (tick % 5).
@@ -21,7 +24,7 @@ def client():
         yield c, sim
 
 
-def test_history_global_endpoint(client):
+def test_history_global_endpoint(client: Any) -> None:
     c, _ = client
     r = c.get("/api/history/global")
     assert r.status_code == 200
@@ -42,7 +45,7 @@ def test_history_global_endpoint(client):
         assert k in pt, f"missing key {k}"
 
 
-def test_history_robot_endpoint(client):
+def test_history_robot_endpoint(client: Any) -> None:
     c, sim = client
     robot_id = next(iter(sim.robots))
     r = c.get(f"/api/history/robots/{robot_id}")
@@ -52,7 +55,7 @@ def test_history_robot_endpoint(client):
     assert len(body["series"]) >= 5  # one per tick for 12 ticks
 
 
-def test_history_robot_limit_arg(client):
+def test_history_robot_limit_arg(client: Any) -> None:
     c, sim = client
     robot_id = next(iter(sim.robots))
     r = c.get(f"/api/history/robots/{robot_id}?limit=3")
@@ -60,7 +63,7 @@ def test_history_robot_limit_arg(client):
     assert len(body["series"]) == 3
 
 
-def test_history_mpc_endpoint(client):
+def test_history_mpc_endpoint(client: Any) -> None:
     c, _ = client
     r = c.get("/api/history/mpc")
     assert r.status_code == 200
@@ -70,7 +73,7 @@ def test_history_mpc_endpoint(client):
     assert len(body["series"]) >= 3
 
 
-def test_history_localization_endpoint(client):
+def test_history_localization_endpoint(client: Any) -> None:
     c, _ = client
     r = c.get("/api/history/localization")
     assert r.status_code == 200
@@ -84,7 +87,7 @@ def test_history_localization_endpoint(client):
         assert "mean_rmse" in first
 
 
-def test_history_localization_endpoint_disabled_mode():
+def test_history_localization_endpoint_disabled_mode() -> None:
     sim = SimulationEngine(num_robots=2, tick_interval=0.5, auto_start=False)
     sim._toa_estimator = None
     sim.toa_history.clear()
@@ -97,7 +100,7 @@ def test_history_localization_endpoint_disabled_mode():
         assert body == {"enabled": False, "series": []}
 
 
-def test_mpc_explainer_endpoint(client):
+def test_mpc_explainer_endpoint(client: Any) -> None:
     c, _ = client
     r = c.get("/api/mpc/explainer")
     assert r.status_code == 200
@@ -107,7 +110,7 @@ def test_mpc_explainer_endpoint(client):
     assert body["title"] == MPC_EXPLAINER["title"]
 
 
-def test_status_snapshot_includes_history_mpc_localization(client):
+def test_status_snapshot_includes_history_mpc_localization(client: Any) -> None:
     c, _ = client
     r = c.get("/api/status")
     body = r.get_json()
@@ -119,7 +122,7 @@ def test_status_snapshot_includes_history_mpc_localization(client):
     assert "localization" in body
 
 
-def test_openapi_lists_new_paths(client):
+def test_openapi_lists_new_paths(client: Any) -> None:
     c, _ = client
     r = c.get("/api/openapi.json")
     schema = r.get_json()

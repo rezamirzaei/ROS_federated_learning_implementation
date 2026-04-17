@@ -9,6 +9,7 @@ every CI matrix job, not just the ROS runtime image.
 from __future__ import annotations
 
 import json
+from typing import Any
 
 import pytest
 import torch
@@ -16,7 +17,7 @@ import torch
 # ── Aggregator side ─────────────────────────────────────────────────────
 
 
-def test_aggregator_defaults_to_fedavg_in_global_model_payload(fake_ros):
+def test_aggregator_defaults_to_fedavg_in_global_model_payload(fake_ros: Any) -> None:
     from fl_robots.aggregator import AggregatorNode
 
     node = AggregatorNode()
@@ -32,7 +33,7 @@ def test_aggregator_defaults_to_fedavg_in_global_model_payload(fake_ros):
     assert payload["config"]["proximal_mu"] == 0.0
 
 
-def test_aggregator_broadcasts_fedprox_config_when_configured(fake_ros):
+def test_aggregator_broadcasts_fedprox_config_when_configured(fake_ros: Any) -> None:
     from fl_robots.aggregator import AggregatorNode
 
     node = AggregatorNode()
@@ -45,7 +46,7 @@ def test_aggregator_broadcasts_fedprox_config_when_configured(fake_ros):
     assert payload["config"]["proximal_mu"] == 0.1
 
 
-def test_aggregator_tags_aggregation_metrics_with_algorithm(fake_ros):
+def test_aggregator_tags_aggregation_metrics_with_algorithm(fake_ros: Any) -> None:
     from fl_robots.aggregator import AggregatorNode
 
     node = AggregatorNode()
@@ -54,7 +55,7 @@ def test_aggregator_tags_aggregation_metrics_with_algorithm(fake_ros):
     node.min_robots = 2
 
     class _Msg:
-        def __init__(self, d):
+        def __init__(self, d: Any) -> None:
             self.data = d
 
     # Register two robots and deliver matching weights.
@@ -88,7 +89,7 @@ def test_aggregator_tags_aggregation_metrics_with_algorithm(fake_ros):
 # ── Robot agent side ───────────────────────────────────────────────────
 
 
-def _broadcast_global(node, *, algorithm: str, proximal_mu: float, round_num: int = 1):
+def _broadcast_global(node: Any, *, algorithm: str, proximal_mu: float, round_num: int = 1) -> None:
     """Publish a canonical global_model payload to the shared FakeROS bus."""
     weights = {k: v.tolist() for k, v in node.model.get_weights().items()}
 
@@ -110,7 +111,7 @@ def _broadcast_global(node, *, algorithm: str, proximal_mu: float, round_num: in
     node.global_model_callback(_Msg())  # type: ignore[arg-type]
 
 
-def test_robot_agent_ignores_proximal_under_fedavg(fake_ros):
+def test_robot_agent_ignores_proximal_under_fedavg(fake_ros: Any) -> None:
     from fl_robots.robot_agent import RobotAgentNode
 
     node = RobotAgentNode()
@@ -122,7 +123,7 @@ def test_robot_agent_ignores_proximal_under_fedavg(fake_ros):
     assert node._proximal_penalty() is None
 
 
-def test_robot_agent_stores_snapshot_under_fedprox(fake_ros):
+def test_robot_agent_stores_snapshot_under_fedprox(fake_ros: Any) -> None:
     from fl_robots.robot_agent import RobotAgentNode
 
     node = RobotAgentNode()
@@ -137,7 +138,7 @@ def test_robot_agent_stores_snapshot_under_fedprox(fake_ros):
     assert set(node._fl_global_snapshot.keys()).issubset(param_names)
 
 
-def test_proximal_penalty_is_zero_at_snapshot_point(fake_ros):
+def test_proximal_penalty_is_zero_at_snapshot_point(fake_ros: Any) -> None:
     """When local weights == global snapshot, the proximal term is 0."""
     from fl_robots.robot_agent import RobotAgentNode
 
@@ -150,7 +151,7 @@ def test_proximal_penalty_is_zero_at_snapshot_point(fake_ros):
     assert float(penalty.item()) == 0.0
 
 
-def test_proximal_penalty_grows_with_parameter_drift(fake_ros):
+def test_proximal_penalty_grows_with_parameter_drift(fake_ros: Any) -> None:
     """As local weights drift from the snapshot, the penalty must strictly
     increase. Guards against sign-flip / wrong-norm regressions."""
     from fl_robots.robot_agent import RobotAgentNode
@@ -174,7 +175,7 @@ def test_proximal_penalty_grows_with_parameter_drift(fake_ros):
     assert abs(float(penalty1.item()) - expected) < 1e-3
 
 
-def test_proximal_penalty_gradient_pulls_weights_toward_snapshot(fake_ros):
+def test_proximal_penalty_gradient_pulls_weights_toward_snapshot(fake_ros: Any) -> None:
     """The gradient of the proximal term is ``μ·(w − w_global)``. Applying
     an SGD step on the penalty alone must reduce the distance to the
     snapshot — the core reason FedProx stabilises non-IID training."""
@@ -210,7 +211,7 @@ def test_proximal_penalty_gradient_pulls_weights_toward_snapshot(fake_ros):
     assert after < before, "proximal gradient step did not pull weights back"
 
 
-def test_proximal_penalty_rejects_missing_snapshot_params(fake_ros):
+def test_proximal_penalty_rejects_missing_snapshot_params(fake_ros: Any) -> None:
     from fl_robots.robot_agent import RobotAgentNode
 
     node = RobotAgentNode()
@@ -224,7 +225,7 @@ def test_proximal_penalty_rejects_missing_snapshot_params(fake_ros):
         node._proximal_penalty()
 
 
-def test_proximal_penalty_rejects_shape_mismatches(fake_ros):
+def test_proximal_penalty_rejects_shape_mismatches(fake_ros: Any) -> None:
     from fl_robots.robot_agent import RobotAgentNode
 
     node = RobotAgentNode()

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Iterator
+from typing import Any
 
 import pytest
 from fl_robots.simulation import SimulationEngine
@@ -10,7 +12,7 @@ from fl_robots.standalone_web import create_app
 
 
 @pytest.fixture
-def app_with_token(monkeypatch):
+def app_with_token(monkeypatch: Any) -> Iterator[Any]:
     """Flask app with a bearer token set. Simulation paused for determinism."""
     monkeypatch.setenv("FL_ROBOTS_API_TOKEN", "secret-xyz")
     sim = SimulationEngine(num_robots=3, auto_start=False)
@@ -20,21 +22,21 @@ def app_with_token(monkeypatch):
 
 
 @pytest.fixture
-def app_no_token():
+def app_no_token() -> Iterator[Any]:
     sim = SimulationEngine(num_robots=3, auto_start=False)
     app = create_app(sim)
     yield app, sim
     sim.shutdown()
 
 
-def test_command_requires_bearer_when_token_set(app_with_token):
+def test_command_requires_bearer_when_token_set(app_with_token: Any) -> None:
     app, _ = app_with_token
     client = app.test_client()
     rv = client.post("/api/command", json={"command": "step"})
     assert rv.status_code == 401
 
 
-def test_command_accepts_valid_bearer(app_with_token):
+def test_command_accepts_valid_bearer(app_with_token: Any) -> None:
     app, _ = app_with_token
     client = app.test_client()
     rv = client.post(
@@ -46,7 +48,7 @@ def test_command_accepts_valid_bearer(app_with_token):
     assert rv.get_json()["ok"] is True
 
 
-def test_command_rejects_wrong_bearer(app_with_token):
+def test_command_rejects_wrong_bearer(app_with_token: Any) -> None:
     app, _ = app_with_token
     client = app.test_client()
     rv = client.post(
@@ -57,21 +59,21 @@ def test_command_rejects_wrong_bearer(app_with_token):
     assert rv.status_code == 401
 
 
-def test_command_without_token_env_requires_csrf(app_no_token):
+def test_command_without_token_env_requires_csrf(app_no_token: Any) -> None:
     app, _ = app_no_token
     client = app.test_client()
     rv = client.post("/api/command", json={"command": "step"})
     assert rv.status_code == 403
 
 
-def test_command_without_token_env_accepts_valid_csrf(app_no_token, csrf_headers):
+def test_command_without_token_env_accepts_valid_csrf(app_no_token: Any, csrf_headers: Any) -> None:
     app, _ = app_no_token
     client = app.test_client()
     rv = client.post("/api/command", json={"command": "step"}, headers=csrf_headers(client))
     assert rv.status_code == 200
 
 
-def test_metrics_endpoint_returns_prometheus_text(app_no_token, csrf_headers):
+def test_metrics_endpoint_returns_prometheus_text(app_no_token: Any, csrf_headers: Any) -> None:
     app, sim = app_no_token
     sim.step_once()  # generate one tick so gauges are non-zero
     client = app.test_client()
@@ -96,14 +98,14 @@ def test_metrics_endpoint_returns_prometheus_text(app_no_token, csrf_headers):
         assert metric in body, f"missing metric {metric}"
 
 
-def test_metrics_content_type(app_no_token):
+def test_metrics_content_type(app_no_token: Any) -> None:
     app, _ = app_no_token
     client = app.test_client()
     rv = client.get("/metrics")
     assert rv.content_type.startswith("text/plain")
 
 
-def test_status_exposes_full_capture_payload_for_ui(app_no_token):
+def test_status_exposes_full_capture_payload_for_ui(app_no_token: Any) -> None:
     """The standalone dashboard relies on a specific capture payload shape.
     Lock it in so a future refactor doesn't silently break the UI."""
     app, sim = app_no_token
@@ -154,7 +156,7 @@ osqp = pytest.importorskip("osqp")
 scipy = pytest.importorskip("scipy")
 
 
-def test_qp_planner_drives_single_robot_toward_target():
+def test_qp_planner_drives_single_robot_toward_target() -> None:
     from fl_robots.mpc_qp import QPMPCPlanner
     from fl_robots.sim_models import Pose2D, RobotState
 
@@ -174,7 +176,7 @@ def test_qp_planner_drives_single_robot_toward_target():
     assert plan.tracking_error < 1.5
 
 
-def test_qp_planner_preserves_separation_for_formation():
+def test_qp_planner_preserves_separation_for_formation() -> None:
     from fl_robots.mpc_qp import QPMPCPlanner
     from fl_robots.sim_models import Pose2D, RobotState
 
@@ -201,7 +203,7 @@ def test_qp_planner_preserves_separation_for_formation():
             assert math.dist(pi, pj) > 0.3
 
 
-def test_qp_planner_shape_matches_grid_planner():
+def test_qp_planner_shape_matches_grid_planner() -> None:
     """Drop-in compatibility with DistributedMPCPlanner."""
     from fl_robots.mpc import DistributedMPCPlanner, MPCPlan
     from fl_robots.mpc_qp import QPMPCPlanner
@@ -224,7 +226,7 @@ def test_qp_planner_shape_matches_grid_planner():
         assert p.tracking_error >= 0.0
 
 
-def test_qp_planner_respects_max_speed_box_constraint():
+def test_qp_planner_respects_max_speed_box_constraint() -> None:
     """The L_∞ velocity bound ‖U_k‖_∞ ≤ u_max must hold for every step."""
     from fl_robots.mpc_qp import QPMPCPlanner
     from fl_robots.sim_models import Pose2D, RobotState
@@ -255,7 +257,7 @@ def test_qp_planner_respects_max_speed_box_constraint():
         prev = (p1.x, p1.y)
 
 
-def test_qp_warm_start_does_not_regress_iterations():
+def test_qp_warm_start_does_not_regress_iterations() -> None:
     """Re-solving a near-identical problem must not require more iterations."""
     from fl_robots.mpc_qp import QPMPCPlanner
     from fl_robots.sim_models import Pose2D, RobotState
@@ -277,7 +279,7 @@ def test_qp_warm_start_does_not_regress_iterations():
     assert warm_iters <= cold_iters, f"warm start regressed: cold={cold_iters}, warm={warm_iters}"
 
 
-def test_qp_warm_cache_tolerates_stale_shapes():
+def test_qp_warm_cache_tolerates_stale_shapes() -> None:
     """A pollutted cache (wrong shape) must not crash the next solve."""
     from fl_robots.mpc_qp import QPMPCPlanner
     from fl_robots.sim_models import Pose2D, RobotState
@@ -298,7 +300,7 @@ def test_qp_warm_cache_tolerates_stale_shapes():
     assert plan.tracking_error >= 0.0
 
 
-def test_qp_planner_respects_slew_limit():
+def test_qp_planner_respects_slew_limit() -> None:
     """Step-to-step velocity change must stay within the configured slew."""
     from fl_robots.mpc_qp import QPMPCPlanner
     from fl_robots.sim_models import Pose2D, RobotState
@@ -318,7 +320,7 @@ def test_qp_planner_respects_slew_limit():
     assert abs(plan.first_velocity[1]) <= du + 1e-3
 
 
-def test_rotating_formation_produces_diverse_motion():
+def test_rotating_formation_produces_diverse_motion() -> None:
     """Robots must not all move in lockstep — the rotating formation
     and per-robot breathing should spread their velocities."""
     sim = SimulationEngine(num_robots=4, tick_interval=0.4, auto_start=False)
@@ -336,7 +338,7 @@ def test_rotating_formation_produces_diverse_motion():
     sim.shutdown()
 
 
-def test_capture_mode_awards_score_and_respawns_target():
+def test_capture_mode_awards_score_and_respawns_target() -> None:
     """Place a robot on top of the target → it must capture, score++, target moves."""
     pytest.importorskip("numpy")  # TOA/capture needs numpy
     sim = SimulationEngine(num_robots=3, tick_interval=0.4, auto_start=False)
@@ -368,7 +370,7 @@ def test_capture_mode_awards_score_and_respawns_target():
     sim.shutdown()
 
 
-def test_capture_mode_drives_robots_toward_estimates():
+def test_capture_mode_drives_robots_toward_estimates() -> None:
     """In capture mode, each robot's formation_offset should encode its
     private TOA estimate (not a rigid formation slot)."""
     pytest.importorskip("numpy")
@@ -387,7 +389,7 @@ def test_capture_mode_drives_robots_toward_estimates():
     sim.shutdown()
 
 
-def test_capture_is_instant_by_default_next_tick_eligible():
+def test_capture_is_instant_by_default_next_tick_eligible() -> None:
     """With the default ``capture_grace_ticks=0``, a *different* robot can
     score on the tick immediately following someone else's capture.
 
@@ -416,7 +418,7 @@ def test_capture_is_instant_by_default_next_tick_eligible():
     sim.shutdown()
 
 
-def test_capture_cooldown_blocks_same_robot_from_double_scoring():
+def test_capture_cooldown_blocks_same_robot_from_double_scoring() -> None:
     """After a capture, the same robot is on cooldown for a few ticks."""
     pytest.importorskip("numpy")
     sim = SimulationEngine(num_robots=3, tick_interval=0.4, auto_start=False)
@@ -433,7 +435,7 @@ def test_capture_cooldown_blocks_same_robot_from_double_scoring():
     sim.shutdown()
 
 
-def test_capture_win_condition_sets_winner_id():
+def test_capture_win_condition_sets_winner_id() -> None:
     """Cross the win_score threshold and winner_id should be set; the
     event payload flags kind='win'."""
     pytest.importorskip("numpy")
@@ -456,7 +458,7 @@ def test_capture_win_condition_sets_winner_id():
     sim.shutdown()
 
 
-def test_planner_solve_with_refs_accepts_per_step_trajectories():
+def test_planner_solve_with_refs_accepts_per_step_trajectories() -> None:
     """The new public API should drop-in-replace solve() with a list of refs."""
     from fl_robots.mpc import DistributedMPCPlanner
     from fl_robots.sim_models import Pose2D, RobotState
@@ -478,7 +480,7 @@ def test_planner_solve_with_refs_accepts_per_step_trajectories():
     assert xs[-1] > xs[0]
 
 
-def test_qp_planner_solve_with_refs_tracks_moving_ref():
+def test_qp_planner_solve_with_refs_tracks_moving_ref() -> None:
     """QP planner should track a time-varying reference. We pick a ramp
     slow enough that slew + max_speed can follow, then check tracking
     error is modest."""

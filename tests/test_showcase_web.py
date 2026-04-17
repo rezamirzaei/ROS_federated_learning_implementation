@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 import math
+from typing import Any
 
 from fl_robots.message_bus import MessageBus
 from fl_robots.mpc import DistributedMPCPlanner
@@ -9,7 +12,7 @@ from fl_robots.standalone_web import create_app
 # ── MessageBus ──────────────────────────────────────────────────────
 
 
-def test_message_bus_records_and_dispatches_events():
+def test_message_bus_records_and_dispatches_events() -> None:
     bus = MessageBus()
     received: list[BusEvent] = []
 
@@ -21,7 +24,7 @@ def test_message_bus_records_and_dispatches_events():
     assert bus.recent_events(limit=1)[0].source == "robot_1"
 
 
-def test_message_bus_unsubscribe():
+def test_message_bus_unsubscribe() -> None:
     bus = MessageBus()
     received: list[BusEvent] = []
     bus.subscribe("/t", received.append)
@@ -32,7 +35,7 @@ def test_message_bus_unsubscribe():
     assert len(received) == 1  # no new events
 
 
-def test_message_bus_wildcard_subscription():
+def test_message_bus_wildcard_subscription() -> None:
     bus = MessageBus()
     received: list[BusEvent] = []
     bus.subscribe("*", received.append)
@@ -41,10 +44,10 @@ def test_message_bus_wildcard_subscription():
     assert len(received) == 2
 
 
-def test_message_bus_handler_exception_does_not_crash():
+def test_message_bus_handler_exception_does_not_crash() -> None:
     bus = MessageBus()
 
-    def bad_handler(event):
+    def bad_handler(event: Any) -> None:
         raise RuntimeError("boom")
 
     bus.subscribe("/t", bad_handler)
@@ -53,7 +56,7 @@ def test_message_bus_handler_exception_does_not_crash():
     assert event.topic == "/t"
 
 
-def test_message_bus_subscriber_count():
+def test_message_bus_subscriber_count() -> None:
     bus = MessageBus()
     assert bus.subscriber_count == 0
     bus.subscribe("/a", lambda e: None)
@@ -64,7 +67,7 @@ def test_message_bus_subscriber_count():
 # ── MPC ─────────────────────────────────────────────────────────────
 
 
-def test_distributed_mpc_produces_horizon_and_safe_first_step():
+def test_distributed_mpc_produces_horizon_and_safe_first_step() -> None:
     planner = DistributedMPCPlanner(horizon=6)
     robots = [
         RobotState(
@@ -103,7 +106,7 @@ def test_distributed_mpc_produces_horizon_and_safe_first_step():
     assert min_separation > 0.3
 
 
-def test_mpc_single_robot():
+def test_mpc_single_robot() -> None:
     planner = DistributedMPCPlanner(horizon=4)
     robots = [
         RobotState(
@@ -122,7 +125,7 @@ def test_mpc_single_robot():
 # ── Simulation ──────────────────────────────────────────────────────
 
 
-def test_simulation_aggregates_after_five_training_steps():
+def test_simulation_aggregates_after_five_training_steps() -> None:
     simulation = SimulationEngine(num_robots=4, auto_start=False)
     try:
         simulation.issue_command("start_training")
@@ -139,7 +142,7 @@ def test_simulation_aggregates_after_five_training_steps():
         simulation.shutdown()
 
 
-def test_simulation_reset_clears_state():
+def test_simulation_reset_clears_state() -> None:
     sim = SimulationEngine(num_robots=2, auto_start=False)
     try:
         sim.issue_command("start_training")
@@ -156,7 +159,7 @@ def test_simulation_reset_clears_state():
         sim.shutdown()
 
 
-def test_simulation_disturbance_moves_robots():
+def test_simulation_disturbance_moves_robots() -> None:
     sim = SimulationEngine(num_robots=2, auto_start=False)
     try:
         positions_before = {rid: (r.pose.x, r.pose.y) for rid, r in sim.robots.items()}
@@ -168,7 +171,7 @@ def test_simulation_disturbance_moves_robots():
         sim.shutdown()
 
 
-def test_simulation_export_has_timestamp():
+def test_simulation_export_has_timestamp() -> None:
     sim = SimulationEngine(num_robots=2, auto_start=False)
     try:
         export = sim.export_results()
@@ -178,7 +181,7 @@ def test_simulation_export_has_timestamp():
         sim.shutdown()
 
 
-def test_simulation_seed_makes_runs_reproducible():
+def test_simulation_seed_makes_runs_reproducible() -> None:
     sim_a = SimulationEngine(num_robots=3, auto_start=False, seed=123)
     sim_b = SimulationEngine(num_robots=3, auto_start=False, seed=123)
     try:
@@ -199,7 +202,7 @@ def test_simulation_seed_makes_runs_reproducible():
 # ── Web routes ──────────────────────────────────────────────────────
 
 
-def test_web_routes_expose_status_and_validate_commands(csrf_headers):
+def test_web_routes_expose_status_and_validate_commands(csrf_headers: Any) -> None:
     simulation = SimulationEngine(num_robots=3, auto_start=False)
     app = create_app(simulation)
     client = app.test_client()
@@ -222,7 +225,7 @@ def test_web_routes_expose_status_and_validate_commands(csrf_headers):
         simulation.shutdown()
 
 
-def test_standalone_template_wires_capture_panel_ids():
+def test_standalone_template_wires_capture_panel_ids() -> None:
     """The capture panel in the dashboard relies on specific DOM IDs that
     ``standalone.js`` looks up at boot — if any go missing the UI silently
     breaks. Lock them in."""
@@ -252,7 +255,7 @@ def test_standalone_template_wires_capture_panel_ids():
         simulation.shutdown()
 
 
-def test_web_health_endpoint():
+def test_web_health_endpoint() -> None:
     simulation = SimulationEngine(num_robots=2, auto_start=False)
     app = create_app(simulation)
     client = app.test_client()
@@ -267,7 +270,7 @@ def test_web_health_endpoint():
         simulation.shutdown()
 
 
-def test_web_results_endpoint():
+def test_web_results_endpoint() -> None:
     simulation = SimulationEngine(num_robots=2, auto_start=False)
     app = create_app(simulation)
     client = app.test_client()
@@ -280,7 +283,7 @@ def test_web_results_endpoint():
         simulation.shutdown()
 
 
-def test_web_missing_command_returns_400(csrf_headers):
+def test_web_missing_command_returns_400(csrf_headers: Any) -> None:
     simulation = SimulationEngine(num_robots=2, auto_start=False)
     app = create_app(simulation)
     client = app.test_client()
@@ -293,7 +296,7 @@ def test_web_missing_command_returns_400(csrf_headers):
         simulation.shutdown()
 
 
-def test_web_index_returns_html():
+def test_web_index_returns_html() -> None:
     simulation = SimulationEngine(num_robots=2, auto_start=False)
     app = create_app(simulation)
     client = app.test_client()

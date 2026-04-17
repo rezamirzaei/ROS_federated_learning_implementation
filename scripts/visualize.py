@@ -10,6 +10,8 @@ Run this after training completes to visualize:
 - Participation statistics
 """
 
+from __future__ import annotations
+
 import json
 import os
 import sys
@@ -58,7 +60,7 @@ def load_results(results_dir: str | Path) -> dict[str, Any]:
     return data
 
 
-def plot_convergence(data: dict, output_dir: str):
+def plot_convergence(data: dict, output_dir: str) -> None:
     """Plot training convergence metrics."""
     if "aggregation" not in data:
         print("No aggregation data found")
@@ -117,7 +119,7 @@ def plot_convergence(data: dict, output_dir: str):
     plt.show()
 
 
-def plot_robot_metrics(data: dict, output_dir: str):
+def plot_robot_metrics(data: dict, output_dir: str) -> None:
     """Plot per-robot training metrics."""
     if "robots" not in data:
         print("No robot metrics found")
@@ -188,7 +190,7 @@ def plot_robot_metrics(data: dict, output_dir: str):
     plt.show()
 
 
-def print_summary(data: dict):
+def print_summary(data: dict) -> None:
     """Print training summary statistics."""
     if "summary" not in data:
         print("No summary data found")
@@ -214,7 +216,7 @@ def print_summary(data: dict):
     print("=" * 50 + "\n")
 
 
-def main():
+def main() -> None:
     """Main function."""
     # Default results directory
     results_dir = os.environ.get("RESULTS_DIR", "results")

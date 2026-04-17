@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
+from typing import Any
 
 import pytest
 from fl_robots.testing.fake_ros import FakeROSEnvironment
@@ -22,11 +23,11 @@ def fake_ros() -> Iterator[FakeROSEnvironment]:
 
 
 @pytest.fixture
-def csrf_headers():
+def csrf_headers() -> Callable[..., dict[str, str]]:
     """Return a helper that bootstraps the standalone app's CSRF cookie."""
 
     def _factory(
-        client,
+        client: Any,
         *,
         cookie_name: str = "fl_robots_csrf_token",
         header_name: str = "X-CSRF-Token",
@@ -37,4 +38,3 @@ def csrf_headers():
         return {header_name: cookie.value}
 
     return _factory
-

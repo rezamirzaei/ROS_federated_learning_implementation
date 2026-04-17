@@ -6,8 +6,12 @@ These tests verify the ROS2 communication patterns work correctly,
 including custom interfaces for services and actions.
 """
 
+from __future__ import annotations
+
 import json
 import time
+from collections.abc import Iterator
+from typing import Any
 
 import pytest
 
@@ -47,7 +51,7 @@ pytestmark = pytest.mark.skipif(not ROS2_AVAILABLE, reason="ROS2 not available")
 class TestMessageFormats:
     """Test message serialization formats (String/JSON protocol)."""
 
-    def test_registration_message_format(self):
+    def test_registration_message_format(self) -> None:
         registration = {
             "type": "registration",
             "robot_id": "robot_test",
@@ -60,7 +64,7 @@ class TestMessageFormats:
         assert deserialized["robot_id"] == "robot_test"
         assert deserialized["model_params"] == 5000
 
-    def test_weights_message_format(self):
+    def test_weights_message_format(self) -> None:
         import numpy as np
 
         weights = {
@@ -83,7 +87,7 @@ class TestMessageFormats:
         assert "weights" in deserialized
         assert len(deserialized["weights"]["fc1.weight"]) == 4
 
-    def test_global_model_message_format(self):
+    def test_global_model_message_format(self) -> None:
         import numpy as np
 
         message = {
@@ -97,7 +101,7 @@ class TestMessageFormats:
         assert deserialized["type"] == "global_model"
         assert deserialized["round"] == 5
 
-    def test_training_command_format(self):
+    def test_training_command_format(self) -> None:
         commands = ["start_training", "stop_training", "publish_weights"]
         for cmd in commands:
             message = {"command": cmd, "round": 1, "timestamp": time.time()}
@@ -110,7 +114,7 @@ class TestMessageFormats:
 class TestCustomInterfaces:
     """Test custom message, service, and action interface definitions."""
 
-    def test_robot_status_msg(self):
+    def test_robot_status_msg(self) -> None:
         """Verify RobotStatus message can be instantiated."""
         msg = RobotStatus()
         msg.robot_id = "robot_test"
@@ -123,7 +127,7 @@ class TestCustomInterfaces:
         assert msg.robot_id == "robot_test"
         assert msg.status == 0  # STATUS_IDLE
 
-    def test_training_metrics_msg(self):
+    def test_training_metrics_msg(self) -> None:
         msg = TrainingMetrics()
         msg.robot_id = "robot_0"
         msg.round_number = 3
@@ -133,7 +137,7 @@ class TestCustomInterfaces:
         msg.accuracy = 45.6
         assert msg.round_number == 3
 
-    def test_aggregation_result_msg(self):
+    def test_aggregation_result_msg(self) -> None:
         msg = AggregationResult()
         msg.round_number = 10
         msg.num_participants = 3
@@ -142,7 +146,7 @@ class TestCustomInterfaces:
         msg.participant_ids = ["robot_0", "robot_1", "robot_2"]
         assert len(msg.participant_ids) == 3
 
-    def test_register_robot_srv(self):
+    def test_register_robot_srv(self) -> None:
         req = RegisterRobot.Request()
         req.robot_id = "robot_test"
         req.model_parameter_count = 5000
@@ -156,7 +160,7 @@ class TestCustomInterfaces:
         resp.current_round = 5
         assert resp.success is True
 
-    def test_trigger_aggregation_srv(self):
+    def test_trigger_aggregation_srv(self) -> None:
         req = TriggerAggregation.Request()
         req.force = True
         req.min_participants = 2
@@ -169,7 +173,7 @@ class TestCustomInterfaces:
         resp.mean_divergence = 0.5
         assert resp.round_number == 10
 
-    def test_get_model_info_srv(self):
+    def test_get_model_info_srv(self) -> None:
         req = GetModelInfo.Request()
         req.robot_id = "robot_0"
         resp = GetModelInfo.Response()
@@ -178,7 +182,7 @@ class TestCustomInterfaces:
         resp.model_architecture = '{"type": "SimpleNavigationNet"}'
         assert resp.parameter_count == 5000
 
-    def test_update_hyperparameters_srv(self):
+    def test_update_hyperparameters_srv(self) -> None:
         req = UpdateHyperparameters.Request()
         req.robot_id = "robot_0"
         req.learning_rate = 0.0005
@@ -186,7 +190,7 @@ class TestCustomInterfaces:
         req.local_epochs = 10
         assert req.learning_rate == pytest.approx(0.0005)
 
-    def test_train_round_action(self):
+    def test_train_round_action(self) -> None:
         """Test TrainRound action goal/result/feedback types."""
         goal = TrainRound.Goal()
         goal.round_number = 5
@@ -219,12 +223,12 @@ class TestROS2Communication:
     """Integration tests for ROS2 pub/sub."""
 
     @pytest.fixture
-    def ros_context(self):
+    def ros_context(self) -> Iterator[None]:
         rclpy.init()
         yield
         rclpy.shutdown()
 
-    def test_topic_names(self, ros_context):
+    def test_topic_names(self, ros_context: Any) -> None:
         expected_topics = [
             "/fl/robot_status",
             "/fl/global_model",
@@ -236,7 +240,7 @@ class TestROS2Communication:
             assert topic.startswith("/")
             assert "//" not in topic
 
-    def test_service_names(self, ros_context):
+    def test_service_names(self, ros_context: Any) -> None:
         """Verify expected service name format."""
         expected_services = [
             "/fl/register_robot",
@@ -249,7 +253,7 @@ class TestROS2Communication:
             assert srv.startswith("/")
             assert "//" not in srv
 
-    def test_action_names(self, ros_context):
+    def test_action_names(self, ros_context: Any) -> None:
         """Verify expected action name format."""
         expected_actions = [
             "/fl/robot_0/train_round",

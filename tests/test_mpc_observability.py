@@ -13,7 +13,7 @@ def _run_sim(ticks: int = 6) -> SimulationEngine:
     return sim
 
 
-def test_grid_planner_reports_diagnostics():
+def test_grid_planner_reports_diagnostics() -> None:
     sim = _run_sim(3)
     system, per_robot = sim.planner.diagnostics(42, list(sim.robots.values()))
     assert system.tick == 42
@@ -29,7 +29,7 @@ def test_grid_planner_reports_diagnostics():
         assert d.control_effort >= 0
 
 
-def test_snapshot_contains_mpc_section():
+def test_snapshot_contains_mpc_section() -> None:
     sim = _run_sim(3)
     snap = sim.snapshot()
     assert "mpc" in snap
@@ -40,7 +40,7 @@ def test_snapshot_contains_mpc_section():
     assert isinstance(mpc["history"], list) and len(mpc["history"]) >= 3
 
 
-def test_mpc_history_appends_per_tick():
+def test_mpc_history_appends_per_tick() -> None:
     sim = _run_sim(8)
     # One record per robot per tick → 8 * 3 = 24.
     assert len(sim.mpc_robot_history) >= 24
@@ -48,7 +48,7 @@ def test_mpc_history_appends_per_tick():
     assert len(ticks_present) >= 8
 
 
-def test_qp_planner_diagnostics():
+def test_qp_planner_diagnostics() -> None:
     osqp = pytest.importorskip("osqp")
     scipy = pytest.importorskip("scipy")
     from fl_robots.mpc_qp import QPMPCPlanner

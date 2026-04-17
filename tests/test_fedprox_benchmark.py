@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 from dataclasses import replace
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -17,7 +18,7 @@ pytest.importorskip("torch")
 from fl_robots.scripts import benchmark as bm
 
 
-def _fake_federated(cfg):
+def _fake_federated(cfg: Any) -> Any:
     """Replace the MNIST loader with 3 tiny random shards + test split."""
     import torch
 
@@ -33,11 +34,11 @@ def _fake_federated(cfg):
 
 
 @pytest.fixture(autouse=True)
-def stub_mnist(monkeypatch):
+def stub_mnist(monkeypatch: Any) -> None:
     monkeypatch.setattr("fl_robots.data.make_federated_mnist", _fake_federated, raising=True)
 
 
-def _cfg(**over) -> bm.BenchmarkConfig:
+def _cfg(**over: Any) -> bm.BenchmarkConfig:
     base = bm.BenchmarkConfig(
         rounds=2,
         clients=3,
@@ -57,7 +58,7 @@ def _cfg(**over) -> bm.BenchmarkConfig:
     return replace(base, **over)
 
 
-def test_fedavg_benchmark_runs_and_produces_per_round_stats():
+def test_fedavg_benchmark_runs_and_produces_per_round_stats() -> None:
     result = bm.run_benchmark(_cfg())
     assert len(result["rounds"]) == 2
     for r in result["rounds"]:
@@ -66,7 +67,7 @@ def test_fedavg_benchmark_runs_and_produces_per_round_stats():
     assert result["summary"]["final_test_accuracy"] is not None
 
 
-def test_fedprox_benchmark_runs_without_error():
+def test_fedprox_benchmark_runs_without_error() -> None:
     """FedProx path must train without NaNs and produce valid output."""
     result = bm.run_benchmark(_cfg(algorithm="fedprox", proximal_mu=0.05))
     final = result["summary"]["final_test_accuracy"]
@@ -80,7 +81,7 @@ def test_fedprox_benchmark_runs_without_error():
         assert _m.isfinite(r["test_accuracy"])
 
 
-def test_multi_seed_reports_mean_and_std(tmp_path):
+def test_multi_seed_reports_mean_and_std(tmp_path: Any) -> None:
     out = tmp_path / "multi.json"
     cfg = _cfg(num_seeds=3, output=str(out))
     result = bm.run_multi_seed(cfg)
@@ -93,7 +94,7 @@ def test_multi_seed_reports_mean_and_std(tmp_path):
     assert summary["std"] >= 0.0
 
 
-def test_cli_main_writes_json_file(tmp_path):
+def test_cli_main_writes_json_file(tmp_path: Any) -> None:
     out = tmp_path / "bench.json"
     argv = [
         "--rounds",

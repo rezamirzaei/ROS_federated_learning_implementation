@@ -11,6 +11,7 @@ These cover invariants that are hard to express with example-based tests:
 from __future__ import annotations
 
 import math
+from typing import Any
 
 import numpy as np
 import pytest
@@ -36,7 +37,7 @@ WEIGHT_SHAPE = (3, 4)
 
 
 @st.composite
-def weight_dict(draw) -> dict[str, np.ndarray]:
+def weight_dict(draw: Any) -> dict[str, np.ndarray]:
     arr = draw(
         st.lists(finite_floats, min_size=12, max_size=12).map(
             lambda xs: np.array(xs, dtype=np.float32).reshape(WEIGHT_SHAPE)
@@ -55,7 +56,7 @@ def weight_dict(draw) -> dict[str, np.ndarray]:
 
 @given(st.lists(weight_dict(), min_size=1, max_size=6))
 @settings(deadline=None, suppress_health_check=[HealthCheck.too_slow])
-def test_fedavg_equal_samples_is_plain_mean(weights):
+def test_fedavg_equal_samples_is_plain_mean(weights: Any) -> None:
     """With identical sample counts, FedAvg must equal the arithmetic mean."""
     n = len(weights)
     averaged = federated_averaging(weights, sample_counts=[1] * n)
@@ -67,7 +68,7 @@ def test_fedavg_equal_samples_is_plain_mean(weights):
 
 @given(st.lists(weight_dict(), min_size=2, max_size=6), st.data())
 @settings(deadline=None, suppress_health_check=[HealthCheck.too_slow])
-def test_fedavg_permutation_invariant(weights, data):
+def test_fedavg_permutation_invariant(weights: Any, data: Any) -> None:
     """Shuffling the client order must not change the aggregated weights."""
     counts = data.draw(
         st.lists(
@@ -88,7 +89,7 @@ def test_fedavg_permutation_invariant(weights, data):
 
 
 @given(weight_dict(), st.integers(min_value=1, max_value=10))
-def test_fedavg_single_client_is_identity(w, count):
+def test_fedavg_single_client_is_identity(w: Any, count: Any) -> None:
     """Averaging one client's weights must return exactly those weights."""
     averaged = federated_averaging([w], [count])
     for key in w:
@@ -110,7 +111,7 @@ def test_fedavg_single_client_is_identity(w, count):
         max_size=25,
     )
 )
-def test_message_bus_preserves_order_and_payload(events):
+def test_message_bus_preserves_order_and_payload(events: Any) -> None:
     """Every published event arrives in FIFO order with untouched payload."""
     bus = MessageBus(max_events=len(events) + 5)
     received: list[BusEvent] = []
@@ -130,7 +131,7 @@ def test_message_bus_preserves_order_and_payload(events):
     st.floats(min_value=-4.0, max_value=4.0, allow_nan=False, allow_infinity=False),
     st.floats(min_value=-4.0, max_value=4.0, allow_nan=False, allow_infinity=False),
 )
-def test_mpc_tracking_error_is_non_negative_and_bounded(tx, ty):
+def test_mpc_tracking_error_is_non_negative_and_bounded(tx: Any, ty: Any) -> None:
     """Tracking error must be non-negative and no larger than the initial gap."""
     planner = DistributedMPCPlanner(horizon=5)
     robot = RobotState(
@@ -153,7 +154,7 @@ def test_mpc_tracking_error_is_non_negative_and_bounded(tx, ty):
     st.integers(min_value=2, max_value=6),
     st.floats(min_value=0.8, max_value=2.0, allow_nan=False),
 )
-def test_mpc_maintains_minimum_separation(n_robots, radius):
+def test_mpc_maintains_minimum_separation(n_robots: Any, radius: Any) -> None:
     """First-step positions must not collide given a reasonable safe_distance."""
     planner = DistributedMPCPlanner(horizon=4)
     robots = []
@@ -181,7 +182,7 @@ def test_mpc_maintains_minimum_separation(n_robots, radius):
 # ── Retry utility ────────────────────────────────────────────────────
 
 
-def test_retry_succeeds_after_transient_failure():
+def test_retry_succeeds_after_transient_failure() -> None:
     from fl_robots.utils.retry import RetryConfig, retry
 
     calls = {"n": 0}
@@ -197,7 +198,7 @@ def test_retry_succeeds_after_transient_failure():
     assert calls["n"] == 3
 
 
-def test_retry_gives_up_and_reraises():
+def test_retry_gives_up_and_reraises() -> None:
     from fl_robots.utils.retry import RetryConfig, retry
 
     @retry(config=RetryConfig(attempts=2, base_delay=0.001, jitter=0.0))
