@@ -8,12 +8,18 @@ Production-style manifests for the fl-robots standalone dashboard.
 kubectl apply -f deploy/k8s/standalone.yaml
 ```
 
-Before applying in any real environment, replace the mutable example image tag
-in `standalone.yaml` with a released digest, for example:
+Before applying in any real environment, update the placeholder digest in
+`standalone.yaml` with the actual release digest:
 
 ```bash
-kubectl set image deployment/fl-robots fl-robots=ghcr.io/<org>/fl-robots-standalone@sha256:<digest> -n fl-robots
+# After building and pushing the image, grab the digest:
+DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' ghcr.io/<org>/fl-robots-standalone:latest)
+# Patch the manifest:
+sed -i "s|ghcr.io/rezami/fl-robots-standalone@sha256:0.*|${DIGEST}|" deploy/k8s/standalone.yaml
 ```
+
+A Helm chart is also available for templated deployments — see
+[`deploy/helm/fl-robots/`](../helm/fl-robots/).
 
 This provisions:
 
@@ -35,7 +41,7 @@ This provisions:
 - Seccomp profile `RuntimeDefault`
 - No ServiceAccount token auto-mount
 - Docker bases are pinned by digest and Python deps are installed from the
-  checked-in `uv.lock`; keep the deployment image itself digest-pinned too.
+  checked-in `uv.lock`; the deployment image itself is also digest-pinned.
 - Security headers layered on top (see `standalone_web.py::_security_headers`):
   CSP, X-Frame-Options: DENY, X-Content-Type-Options: nosniff,
   Referrer-Policy: no-referrer, Permissions-Policy tight-locked

@@ -81,6 +81,8 @@ dev = [
     "pytest>=7.4.0",
     "pytest-cov>=4.1.0",
     "hypothesis>=6.100.0",
+    "mutmut>=2.4.0",
+    "schemathesis>=3.25.0",
     "ruff>=0.7.0",
     "mypy>=1.10.0",
     "pyright>=1.1.402",
@@ -124,7 +126,7 @@ exclude_also = [
 show_missing = true
 skip_covered = false
 # Minimum total coverage enforced in CI; ratchet up as we add tests.
-fail_under = 70
+fail_under = 75
 
 [tool.ruff]
 line-length = 100
@@ -204,11 +206,12 @@ exclude = [
     "build",
     ".venv",
 ]
-# Relaxed strictness — strict mode is aspirational; the ROS bridge, Pydantic
-# v2 (ConfigDict(slots=...)), and optional-dep stubs still have rough edges.
+# Strict mode: untyped defs and incomplete defs are now disallowed. The ROS
+# bridge, Pydantic v2 (ConfigDict(slots=...)), and optional-dep stubs still
+# have rough edges handled via targeted overrides below.
 check_untyped_defs = true
-disallow_incomplete_defs = false
-disallow_untyped_defs = false
+disallow_incomplete_defs = true
+disallow_untyped_defs = true
 no_implicit_optional = true
 warn_redundant_casts = true
 warn_unused_ignores = false
@@ -241,22 +244,34 @@ module = [
     "fl_robots.web_dashboard",
     "fl_robots.digital_twin",
     "fl_robots.monitor",
+    "fl_robots.aggregator",
+    "fl_robots.robot_agent",
+    "fl_robots.standalone_web",
+    "fl_robots.scripts.benchmark",
 ]
-# These modules either wrap untyped ROS stubs or bridge to third-party
-# libraries (structlog, flask-socketio) whose typing is unreliable.
-check_untyped_defs = false
-ignore_errors = true
+# These modules wrap untyped ROS stubs or bridge to third-party libraries
+# (Flask, structlog, flask-socketio) whose typing is unreliable. We require
+# return annotations but relax some strict checks.
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+ignore_errors = false
 
 [tool.pyright]
-# Required CI scope today: standalone/control modules that are available in the
-# default dev environment. ROS-heavy modules still rely on mypy + runtime tests
-# until the ros_compat surface is modeled more precisely for pyright.
+# CI-required scope: standalone/control modules available in the default dev
+# environment. ROS-heavy modules still rely on mypy + runtime tests until the
+# ros_compat surface is modeled more precisely for pyright.
 include = [
+    "src/fl_robots/fl_robots/models",
     "src/fl_robots/fl_robots/observability/logging.py",
+    "src/fl_robots/fl_robots/observability/metrics.py",
     "src/fl_robots/fl_robots/mpc.py",
     "src/fl_robots/fl_robots/mpc_qp.py",
     "src/fl_robots/fl_robots/simulation.py",
+    "src/fl_robots/fl_robots/standalone_web.py",
+    "src/fl_robots/fl_robots/sim_models.py",
     "tests/test_mpc_observability.py",
     "tests/test_web_and_qp.py",
+    "tests/test_aggregation.py",
+    "tests/test_showcase_web.py",
 ]
 extraPaths = ["src/fl_robots"]

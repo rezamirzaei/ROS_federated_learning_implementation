@@ -58,8 +58,9 @@ def test_dashboard_security_headers_and_csp(tmp_path: Path):
     csp = resp.headers["Content-Security-Policy"]
     assert "'unsafe-inline'" not in csp
     assert "object-src 'none'" in csp
-    assert "https://cdn.jsdelivr.net" in csp
-    assert "https://cdn.socket.io" in csp
+    assert "https://cdn.jsdelivr.net" not in csp
+    assert "https://cdn.socket.io" not in csp
+    assert "script-src 'self'" in csp
     assert resp.headers["X-Frame-Options"] == "DENY"
     assert client.get_cookie("fl_robots_dashboard_csrf_token") is not None
 

@@ -83,7 +83,7 @@ class DigitalTwinNode(Node):
     showing robot states, training progress, and system topology.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__("digital_twin")
 
         self.cb_group = ReentrantCallbackGroup()
@@ -104,7 +104,7 @@ class DigitalTwinNode(Node):
         self.state_lock = threading.Lock()
 
         # Robot positions in a circle around aggregator
-        self.robot_positions = {}
+        self.robot_positions: dict[str, tuple[float, float]] = {}
         self.aggregator_position = (0.5, 0.5)  # Center
 
         # Color scheme
@@ -161,7 +161,7 @@ class DigitalTwinNode(Node):
 
         self.get_logger().info("Digital Twin initialized")
 
-    def robot_status_callback(self, msg: String):
+    def robot_status_callback(self, msg: String) -> None:
         """Handle robot status updates."""
         try:
             data = json.loads(msg.data)
@@ -194,7 +194,7 @@ class DigitalTwinNode(Node):
         except Exception as e:
             self.get_logger().error(f"Error in robot status callback: {e}")
 
-    def aggregation_callback(self, msg: String):
+    def aggregation_callback(self, msg: String) -> None:
         """Handle aggregation metrics."""
         try:
             data = json.loads(msg.data)
@@ -207,7 +207,7 @@ class DigitalTwinNode(Node):
         except Exception as e:
             self.get_logger().error(f"Error in aggregation callback: {e}")
 
-    def coordinator_callback(self, msg: String):
+    def coordinator_callback(self, msg: String) -> None:
         """Handle coordinator status."""
         try:
             data = json.loads(msg.data)
@@ -230,7 +230,7 @@ class DigitalTwinNode(Node):
             robot.position = (0.5 + radius * math.cos(angle), 0.5 + radius * math.sin(angle))
             robot.angle = angle
 
-    def update_visualization(self):
+    def update_visualization(self) -> None:
         """Generate and save visualization image."""
         if not MATPLOTLIB_AVAILABLE:
             return
@@ -250,7 +250,7 @@ class DigitalTwinNode(Node):
         except Exception as e:
             self.get_logger().error(f"Error updating visualization: {e}")
 
-    def _render_visualization(self, state: SystemVisualState):
+    def _render_visualization(self, state: SystemVisualState) -> None:
         """Render the digital twin visualization."""
         fig, axes = plt.subplots(1, 2, figsize=(14, 7))
         fig.suptitle("Federated Learning Digital Twin", fontsize=16, fontweight="bold")
@@ -479,7 +479,7 @@ class DigitalTwinNode(Node):
         self.get_logger().debug(f"Saved digital twin visualization to {output_path}")
 
 
-def main(args=None):
+def main(args: list[str] | None = None) -> None:
     rclpy.init(args=args)
 
     node = DigitalTwinNode()

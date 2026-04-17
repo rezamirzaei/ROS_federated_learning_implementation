@@ -27,9 +27,24 @@ you do not control, you should at minimum:
    exchange uses `RELIABLE`+`TRANSIENT_LOCAL`. DDS security is not enabled
    by default; see the official ROS2 `sros2` tooling for production
    deployments.
-5. **Deploy immutable container references.** The Dockerfile now pins base
-   images by digest and uses locked `uv` installs, but deployment manifests
-   should also reference released image digests rather than mutable tags.
+5. **Deploy immutable container references.** The Dockerfile pins base images
+   by digest and uses locked `uv` installs. The k8s manifest and Helm chart
+   both reference the application image by digest. Always update the digest
+   after each release.
+
+## Current security posture
+
+| Layer | Status |
+|---|---|
+| Container bases | Digest-pinned (`python:3.11-slim`, `ros:humble-*`) |
+| Python deps | Locked via `uv.lock`, installed with `--locked` |
+| Application image | Digest-pinned in k8s manifest and Helm chart |
+| CSP | Fully self-hosted (no third-party CDN origins) |
+| CSRF | Double-submit cookie (standalone + ROS dashboard) |
+| Auth | Optional bearer token (`FL_ROBOTS_API_TOKEN`) |
+| Scanning | Trivy (standalone + ROS images), CodeQL, Bandit, dependency-review |
+| Secrets | gitleaks pre-commit hook |
+| Network | k8s NetworkPolicy restricts ingress/egress |
 
 ## Hardening checklist
 

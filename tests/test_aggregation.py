@@ -19,6 +19,9 @@ from fl_robots.models.simple_nn import (
     federated_averaging,
 )
 
+# Primary name is compute_weight_l2_drift; compute_gradient_divergence is a
+# backward-compatible alias tested explicitly below.
+
 
 class TestSimpleNavigationNet:
     """Tests for SimpleNavigationNet model."""

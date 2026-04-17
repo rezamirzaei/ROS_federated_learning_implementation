@@ -67,7 +67,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: fl-robots
-          image: ghcr.io/rezami/fl-robots-standalone:latest # replace with a digest before production use
+          image: ghcr.io/rezami/fl-robots-standalone@sha256:0000000000000000000000000000000000000000000000000000000000000000  # UPDATE: set real digest after each release
           imagePullPolicy: IfNotPresent
           ports:
             - name: http

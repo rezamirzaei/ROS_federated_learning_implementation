@@ -72,7 +72,7 @@ _CSRF_COOKIE_NAME = "fl_robots_dashboard_csrf_token"
 _CSRF_HEADER_NAME = "X-CSRF-Token"
 _DEFAULT_DASHBOARD_CSP = (
     "default-src 'self'; "
-    "script-src 'self' https://cdn.jsdelivr.net https://cdn.socket.io; "
+    "script-src 'self'; "
     "style-src 'self'; "
     "img-src 'self' data:; "
     "connect-src 'self' ws: wss:; "

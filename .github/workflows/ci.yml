@@ -64,7 +64,7 @@ jobs:
         with:
           enable-cache: true
       - name: Install project (core + dev + ml + qp)
-      - run: uv sync --locked --extra dev --extra ml --extra qp
+        run: uv sync --locked --extra dev --extra ml --extra qp
       - name: Pyright
         run: uv run pyright
 
@@ -205,4 +205,44 @@ jobs:
           name: ci-benchmark
           path: results/ci_benchmark.json
 
+  lint-infra:
+    name: Infrastructure linting
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install linters
+        run: |
+          sudo apt-get update && sudo apt-get install -y shellcheck
+          wget -qO /tmp/hadolint https://github.com/hadolint/hadolint/releases/download/v2.12.0/hadolint-Linux-x86_64 && chmod +x /tmp/hadolint
+          pip install yamllint
+      - name: ShellCheck
+        run: find . -name '*.sh' -not -path './.venv/*' | xargs shellcheck --severity=warning || true
+      - name: Hadolint
+        run: /tmp/hadolint docker/Dockerfile --ignore DL3008 --ignore DL3013 || true
+      - name: yamllint
+        run: yamllint -d relaxed .github/workflows/*.yml deploy/k8s/*.yaml compose.yaml mkdocs.yml || true
+      - name: actionlint
+        uses: rhysd/actionlint-action@v1
+        with:
+          args: -ignore SC2086
 
+  mutation-testing:
+    name: Mutation testing (advisory)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    needs: standalone-tests
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - run: uv sync --locked --extra dev --extra ml --extra qp
+      - name: Run mutmut
+        run: |
+          uv run mutmut run \
+            --paths-to-mutate src/fl_robots/fl_robots/models/simple_nn.py \
+            --tests-dir tests/ \
+            --runner "uv run pytest tests/test_aggregation.py -x -q" \
+            || true
+      - name: Show results
+        run: uv run mutmut results || true

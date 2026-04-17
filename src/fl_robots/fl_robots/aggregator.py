@@ -30,7 +30,7 @@ from typing import Any
 
 import numpy as np
 
-from fl_robots.models import SimpleNavigationNet, compute_gradient_divergence, federated_averaging
+from fl_robots.models import SimpleNavigationNet, compute_weight_l2_drift, federated_averaging
 
 from .observability import metrics as observability_metrics
 from .ros_compat import (
@@ -102,7 +102,7 @@ class AggregatorNode(BaseNode):  # type: ignore[misc,valid-type]
     - Any -> on_shutdown() -> FINALIZED
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__("aggregator")
 
         # Callback groups
@@ -180,7 +180,7 @@ class AggregatorNode(BaseNode):  # type: ignore[misc,valid-type]
         )
 
         # Dynamic subscription to robot weight topics
-        self.weight_subscribers = {}
+        self.weight_subscribers: dict[str, object] = {}
 
         # ── Service Servers ─────────────────────────────────────────
         if CUSTOM_INTERFACES:
@@ -265,7 +265,7 @@ class AggregatorNode(BaseNode):  # type: ignore[misc,valid-type]
     # Parameters
     # ────────────────────────────────────────────────────────────────
 
-    def _declare_parameters(self):
+    def _declare_parameters(self) -> None:
         """Declare aggregator parameters."""
         self.declare_parameter("min_robots", 2)
         self.declare_parameter("aggregation_timeout", 30.0)
@@ -281,7 +281,7 @@ class AggregatorNode(BaseNode):  # type: ignore[misc,valid-type]
     # Service Handlers
     # ────────────────────────────────────────────────────────────────
 
-    def _handle_register_robot(self, request, response):
+    def _handle_register_robot(self, request, response) -> None:
         """Service: Register a robot agent with the federation."""
         robot_id = request.robot_id
 
@@ -311,7 +311,7 @@ class AggregatorNode(BaseNode):  # type: ignore[misc,valid-type]
 
         return response
 
-    def _handle_trigger_aggregation(self, request, response):
+    def _handle_trigger_aggregation(self, request, response) -> None:
         """Service: Manually trigger federated averaging."""
         # Only snapshot the pending-weights count under the lock; the aggregation
         # itself takes its own critical sections internally and is too long to
@@ -345,7 +345,7 @@ class AggregatorNode(BaseNode):  # type: ignore[misc,valid-type]
 
         return response
 
-    def _handle_get_model_info(self, request, response):
+    def _handle_get_model_info(self, request, response) -> None:
         """Service: Return global model information."""
         response.success = True
         response.robot_id = "aggregator"
@@ -386,7 +386,7 @@ class AggregatorNode(BaseNode):  # type: ignore[misc,valid-type]
     # Topic Callbacks
     # ────────────────────────────────────────────────────────────────
 
-    def robot_status_callback(self, msg: String):
+    def robot_status_callback(self, msg: String) -> None:
         """Handle robot status and registration messages."""
         try:
             data = json.loads(msg.data)
@@ -404,7 +404,7 @@ class AggregatorNode(BaseNode):  # type: ignore[misc,valid-type]
         except Exception as e:
             self.get_logger().error(f"Error processing robot message: {e}")
 
-    def _handle_registration(self, data: dict[str, Any]):
+    def _handle_registration(self, data: dict[str, Any]) -> None:
         """Handle new robot registration (topic-based)."""
         robot_id = data["robot_id"]
 
@@ -427,7 +427,7 @@ class AggregatorNode(BaseNode):  # type: ignore[misc,valid-type]
                 self.robots[robot_id].last_seen = time.time()
                 self.robots[robot_id].is_active = True
 
-    def _create_weight_subscriber(self, robot_id: str):
+    def _create_weight_subscriber(self, robot_id: str) -> None:
         """Create a subscriber for a robot's weight topic."""
         qos = QoSProfile(
             reliability=ReliabilityPolicy.RELIABLE,
@@ -436,7 +436,7 @@ class AggregatorNode(BaseNode):  # type: ignore[misc,valid-type]
             durability=DurabilityPolicy.TRANSIENT_LOCAL,
         )
 
-        def callback(msg):
+        def callback(msg) -> None:
             self._handle_weight_update(robot_id, msg)
 
         topic = f"/fl/{robot_id}/model_weights"
@@ -446,7 +446,7 @@ class AggregatorNode(BaseNode):  # type: ignore[misc,valid-type]
 
         self.get_logger().debug(f"Created weight subscriber for {robot_id}")
 
-    def _handle_weight_update(self, robot_id: str, msg: String):
+    def _handle_weight_update(self, robot_id: str, msg: String) -> None:
         """Handle incoming weight update from a robot."""
         if not self._is_active:
             return
@@ -497,7 +497,7 @@ class AggregatorNode(BaseNode):  # type: ignore[misc,valid-type]
         except Exception as e:
             self.get_logger().error(f"Error processing weights from {robot_id}: {e}")
 
-    def _handle_status_update(self, data: dict[str, Any]):
+    def _handle_status_update(self, data: dict[str, Any]) -> None:
         """Handle robot status update."""
         robot_id = data["robot_id"]
         with self.state_lock:
@@ -505,7 +505,7 @@ class AggregatorNode(BaseNode):  # type: ignore[misc,valid-type]
                 self.robots[robot_id].last_seen = time.time()
                 self.robots[robot_id].is_active = True
 
-    def _check_aggregation_readiness(self):
+    def _check_aggregation_readiness(self) -> None:
         """Check if we have enough weights to perform aggregation."""
         with self.state_lock:
             num_pending = len(self.pending_weights)
@@ -521,7 +521,7 @@ class AggregatorNode(BaseNode):  # type: ignore[misc,valid-type]
                 if not self.auto_aggregate:
                     self._perform_aggregation()
 
-    def auto_aggregation_callback(self):
+    def auto_aggregation_callback(self) -> None:
         """Periodically check and perform aggregation."""
         if not self._is_active:
             return
@@ -561,7 +561,7 @@ class AggregatorNode(BaseNode):  # type: ignore[misc,valid-type]
             participant_ids = list(self.pending_weights.keys())
 
             # Compute gradient divergence before averaging
-            divergences = compute_gradient_divergence(weights_list, self.global_weights)
+            divergences = compute_weight_l2_drift(weights_list, self.global_weights)
             self.divergence_history.append(
                 {
                     "round": self.current_round,
@@ -633,7 +633,7 @@ class AggregatorNode(BaseNode):  # type: ignore[misc,valid-type]
             self.get_logger().error(f"Aggregation failed: {e}")
             return None
 
-    def _publish_global_model(self):
+    def _publish_global_model(self) -> None:
         """Publish the global model to all robots."""
         weights_serializable = {name: arr.tolist() for name, arr in self.global_weights.items()}
 
@@ -657,13 +657,13 @@ class AggregatorNode(BaseNode):  # type: ignore[misc,valid-type]
 
         self.get_logger().info(f"Published global model (round {self.current_round})")
 
-    def _publish_aggregation_metrics(self, metrics: dict[str, Any]):
+    def _publish_aggregation_metrics(self, metrics: dict[str, Any]) -> None:
         """Publish aggregation metrics for monitoring."""
         msg = String()
         msg.data = json.dumps(metrics)
         self.aggregation_metrics_publisher.publish(msg)
 
-    def _send_training_command(self, command: str):
+    def _send_training_command(self, command: str) -> None:
         """Send training command to all robots."""
         data = {"command": command, "round": self.current_round, "timestamp": time.time()}
         msg = String()
@@ -671,7 +671,7 @@ class AggregatorNode(BaseNode):  # type: ignore[misc,valid-type]
         self.training_command_publisher.publish(msg)
         self.get_logger().info(f"Sent training command: {command}")
 
-    def health_check_callback(self):
+    def health_check_callback(self) -> None:
         """Check health of registered robots."""
         current_time = time.time()
         inactive_threshold = 60.0
@@ -688,13 +688,13 @@ class AggregatorNode(BaseNode):  # type: ignore[misc,valid-type]
                 f"Health check: {active_count}/{len(self.robots)} robots active"
             )
 
-    def start_training_round(self):
+    def start_training_round(self) -> None:
         """Manually start a new training round."""
         self.get_logger().info("Starting new training round")
         self._send_training_command("start_training")
 
 
-def main(args=None):
+def main(args=None) -> None:
     rclpy.init(args=args)
 
     aggregator = AggregatorNode()

@@ -123,7 +123,7 @@ class MonitorNode(Node):
         )
 
         # Subscribe to individual robot metrics
-        self.robot_metric_subs = {}
+        self.robot_metric_subs: dict[str, object] = {}
 
         # Timers
         self.dashboard_timer = self.create_timer(

@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import math
 import time
+from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -189,6 +190,9 @@ class QPMPCPlanner:
         """
         plans: dict[str, MPCPlan] = {}
         predicted_neighbors: dict[str, list[TrajectoryPoint]] = {}
+
+        # Prepare reference sequences for all robots.
+        robot_refs: list[tuple[RobotState, list[tuple[float, float]]]] = []
         for robot in robots:
             ref_seq = list(references.get(robot.robot_id, ()))
             if not ref_seq:
@@ -197,14 +201,32 @@ class QPMPCPlanner:
                 ref_seq = ref_seq + [ref_seq[-1]] * (self.horizon - len(ref_seq))
             elif len(ref_seq) > self.horizon:
                 ref_seq = ref_seq[: self.horizon]
+            robot_refs.append((robot, ref_seq))
 
+        def _solve_one(
+            robot: RobotState,
+            ref_seq: list[tuple[float, float]],
+        ) -> tuple[str, MPCPlan, float]:
             t0 = time.perf_counter()
             plan = self._plan_robot(robot, ref_seq, predicted_neighbors, robots)
-            self.last_solve_time_ms[robot.robot_id] = (time.perf_counter() - t0) * 1e3
-            self.last_control_effort[robot.robot_id] = math.hypot(*plan.first_velocity)
-            self.last_tracking_error[robot.robot_id] = plan.tracking_error
-            plans[robot.robot_id] = plan
-            predicted_neighbors[robot.robot_id] = plan.path
+            elapsed = (time.perf_counter() - t0) * 1e3
+            return robot.robot_id, plan, elapsed
+
+        # OSQP releases the GIL during its C-level ADMM iterations, so
+        # threading gives real parallelism for the numerical work.
+        n_workers = min(len(robot_refs), 4) or 1
+        with ThreadPoolExecutor(max_workers=n_workers) as pool:
+            futures = [
+                pool.submit(_solve_one, robot, ref_seq)
+                for robot, ref_seq in robot_refs
+            ]
+            for fut in futures:
+                rid, plan, elapsed = fut.result()
+                plans[rid] = plan
+                predicted_neighbors[rid] = plan.path
+                self.last_solve_time_ms[rid] = elapsed
+                self.last_control_effort[rid] = math.hypot(*plan.first_velocity)
+                self.last_tracking_error[rid] = plan.tracking_error
         return plans
 
     def diagnostics(
@@ -507,7 +529,7 @@ class QPMPCPlanner:
         )
 
 
-def get_qp_planner(*args, **kwargs) -> QPMPCPlanner:
+def get_qp_planner(*args: Any, **kwargs: Any) -> QPMPCPlanner:
     """Factory that returns a :class:`QPMPCPlanner` or raises on missing deps."""
     return QPMPCPlanner(*args, **kwargs)
 

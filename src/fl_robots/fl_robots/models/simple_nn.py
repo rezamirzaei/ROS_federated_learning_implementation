@@ -74,7 +74,7 @@ class SimpleNavigationNet(nn.Module):
         # Initialize weights using Xavier initialization
         self._init_weights()
 
-    def _init_weights(self):
+    def _init_weights(self) -> None:
         """Initialize weights using Xavier uniform initialization."""
         for m in self.modules():
             if isinstance(m, nn.Linear):
@@ -146,7 +146,7 @@ class SimpleNavigationNet(nn.Module):
             for name, param in self.named_parameters()
         }
 
-    def set_weights(self, weights: dict[str, np.ndarray]):
+    def set_weights(self, weights: dict[str, np.ndarray]) -> None:
         """
         Set model weights from numpy arrays.
 
@@ -168,7 +168,7 @@ class SimpleNavigationNet(nn.Module):
             weights.append(param.detach().cpu().numpy().flatten())
         return np.concatenate(weights)
 
-    def set_flat_weights(self, flat_weights: np.ndarray):
+    def set_flat_weights(self, flat_weights: np.ndarray) -> None:
         """Set trainable weights from a flattened array."""
         idx = 0
         for param in self.parameters():
@@ -207,7 +207,7 @@ class ObstacleAvoidanceNet(nn.Module):
 
         self._init_weights()
 
-    def _init_weights(self):
+    def _init_weights(self) -> None:
         for m in self.modules():
             if isinstance(m, (nn.Conv2d, nn.Linear)):
                 nn.init.xavier_uniform_(m.weight)
@@ -246,7 +246,7 @@ class ObstacleAvoidanceNet(nn.Module):
             for name, param in self.named_parameters()
         }
 
-    def set_weights(self, weights: dict[str, np.ndarray]):
+    def set_weights(self, weights: dict[str, np.ndarray]) -> None:
         state_dict = self.state_dict()
         for name, weight in weights.items():
             if name in state_dict:
@@ -344,5 +344,4 @@ def compute_gradient_divergence(
 ) -> list[float]:
     """Backward-compatible alias for :func:`compute_weight_l2_drift`."""
     return compute_weight_l2_drift(weights_list, global_weights)
-
 

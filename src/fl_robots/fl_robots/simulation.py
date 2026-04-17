@@ -386,7 +386,7 @@ class SimulationEngine:
                     self._tick_locked()
             self._stop_event.wait(self.tick_interval)
 
-    def _handle_command_event(self, event) -> None:
+    def _handle_command_event(self, event: Any) -> None:
         command = str(event.payload["command"])
         if not is_valid_command(command):
             # Defensive: bus publishers may be untrusted. Silently drop
