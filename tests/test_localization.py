@@ -177,7 +177,3 @@ def test_predictor_tracks_constant_velocity_target():
         errs.append(math.hypot(px - x, py - y))
     # After warm-up the tracking error should stabilise well below 0.05 m.
     assert sum(errs[-10:]) / 10 < 0.05
-
-
-
-

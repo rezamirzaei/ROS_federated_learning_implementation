@@ -66,6 +66,15 @@ viz = [
     "matplotlib>=3.7.0",
     "pandas>=2.0.0",
 ]
+# Optional OpenTelemetry tracing — instruments Flask + wraps aggregation /
+# QP solve with spans. Off by default; enable at runtime with
+# ``FL_ROBOTS_OTEL=1`` and set ``OTEL_EXPORTER_OTLP_ENDPOINT``.
+otel = [
+    "opentelemetry-api>=1.25.0",
+    "opentelemetry-sdk>=1.25.0",
+    "opentelemetry-exporter-otlp-proto-http>=1.25.0",
+    "opentelemetry-instrumentation-flask>=0.46b0",
+]
 dev = [
     "pytest>=7.4.0",
     "pytest-cov>=4.1.0",
@@ -85,6 +94,9 @@ python_files = ["test_*.py"]
 python_functions = ["test_*"]
 addopts = "-v --tb=short"
 pythonpath = ["src/fl_robots"]
+# Never discover the colcon/launch_testing ROS tests here — they import
+# rclpy/launch_testing which aren't in the standalone dev environment.
+norecursedirs = ["src/fl_robots/test", ".venv", ".hypothesis", ".mypy_cache"]
 
 [tool.coverage.run]
 source = ["fl_robots"]
@@ -109,7 +121,7 @@ exclude_also = [
 show_missing = true
 skip_covered = false
 # Minimum total coverage enforced in CI; ratchet up as we add tests.
-fail_under = 60
+fail_under = 70
 
 [tool.black]
 line-length = 100
@@ -152,7 +164,7 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/*" = ["B011", "SIM117", "F401", "F841"]
+"tests/*" = ["B011", "SIM117", "F401", "F841", "E402", "RUF059"]
 "src/fl_robots/fl_robots/ros_compat.py" = ["F401"]  # re-exports
 "src/fl_robots/fl_robots/aggregator.py" = ["F401"]  # ROS/interface fallback imports
 "src/fl_robots/fl_robots/robot_agent.py" = ["F401"]
@@ -232,8 +244,6 @@ ignore_missing_imports = true
 [[tool.mypy.overrides]]
 module = [
     "fl_robots.observability.logging",
-    "fl_robots.aggregator",
-    "fl_robots.robot_agent",
     "fl_robots.coordinator",
     "fl_robots.web_dashboard",
     "fl_robots.digital_twin",

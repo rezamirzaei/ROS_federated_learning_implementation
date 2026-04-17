@@ -127,9 +127,7 @@ class DistributedTOAEstimator:
         self._rng = np.random.default_rng(seed)
         # Random init inside a disk — never start with identical estimates
         # or the consensus gap is trivially zero.
-        self._estimates: dict[str, np.ndarray] = {
-            rid: self._random_init() for rid in robot_ids
-        }
+        self._estimates: dict[str, np.ndarray] = {rid: self._random_init() for rid in robot_ids}
         #: Dual variables, keyed by the ordered pair (i, j) — one per directed
         #: neighbour edge. Allocated lazily as topology evolves.
         self._duals: dict[tuple[str, str], np.ndarray] = {}
@@ -303,9 +301,3 @@ class DistributedTOAEstimator:
             for j in range(i + 1, len(values)):
                 gap = max(gap, float(np.linalg.norm(values[i] - values[j])))
         return gap
-
-
-
-
-
-

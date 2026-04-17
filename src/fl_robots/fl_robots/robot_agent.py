@@ -197,6 +197,16 @@ class RobotAgentNode(Node):
         self.training_lock = threading.Lock()
         self._cancel_requested = False
 
+        # FL algorithm config received from the aggregator's global-model
+        # broadcast. Defaults here are used until the first global model
+        # lands, so a cold-start robot behaves like FedAvg (baseline).
+        self._fl_algorithm: str = "fedavg"
+        self._fl_proximal_mu: float = 0.0
+        # Snapshot of the last global parameters, keyed by name matching
+        # ``named_parameters()``. Only populated when the aggregator is
+        # running in ``algorithm=fedprox`` mode — saves memory for FedAvg.
+        self._fl_global_snapshot: dict[str, torch.Tensor] | None = None
+
         # QoS profiles
         qos_reliable = QoSProfile(
             reliability=ReliabilityPolicy.RELIABLE,
@@ -604,10 +614,29 @@ class RobotAgentNode(Node):
             for name, values in data["weights"].items():
                 weights[name] = np.array(values, dtype=np.float32)
 
+            # Latch algorithm config from the broadcast config block. Missing
+            # config → assume FedAvg. Legacy aggregators that don't send
+            # ``config`` keep the existing FedAvg behaviour — the whole
+            # addition is backwards compatible.
+            fl_cfg = data.get("config") or {}
+            algorithm = str(fl_cfg.get("algorithm", "fedavg")).lower()
+            proximal_mu = float(fl_cfg.get("proximal_mu", 0.0) or 0.0)
+
             # Update local model
             with self.training_lock:
                 self.model.set_weights(weights)
                 self.training_round = data.get("round", self.training_round)
+                self._fl_algorithm = algorithm
+                self._fl_proximal_mu = proximal_mu
+                # Take a snapshot of the trainable parameters **only** — the
+                # proximal term is over model weights, not BN running stats.
+                if algorithm == "fedprox" and proximal_mu > 0.0:
+                    named = dict(self.model.named_parameters())
+                    self._fl_global_snapshot = {
+                        name: p.detach().clone() for name, p in named.items()
+                    }
+                else:
+                    self._fl_global_snapshot = None
 
             self.get_logger().info(
                 f"{self.robot_id}: Updated to global model (round {self.training_round})"
@@ -664,6 +693,12 @@ class RobotAgentNode(Node):
 
                     outputs = self.model(batch_X)
                     loss = self.criterion(outputs, batch_y)
+
+                    # FedProx: proximal term. See ``_proximal_penalty`` —
+                    # returns None under FedAvg so this is a hot-path no-op.
+                    prox = self._proximal_penalty()
+                    if prox is not None:
+                        loss = loss + prox
 
                     loss.backward()
                     self.optimizer.step()
@@ -742,6 +777,29 @@ class RobotAgentNode(Node):
         if len(self.local_loss_history) > self._max_history:
             self.local_loss_history = self.local_loss_history[-self._max_history :]
             self.accuracy_history = self.accuracy_history[-self._max_history :]
+
+    def _proximal_penalty(self) -> torch.Tensor | None:
+        """Compute the FedProx proximal term ``½·μ·‖w − w_global‖²``.
+
+        Returns ``None`` when running FedAvg or when no global snapshot
+        has been received yet (cold start). Called from inside both
+        training loops; designed to be a no-op on the hot path for
+        FedAvg (see ``if snapshot is None: return None`` guard).
+        """
+        snapshot = self._fl_global_snapshot
+        mu = self._fl_proximal_mu
+        if snapshot is None or mu <= 0.0 or self._fl_algorithm != "fedprox":
+            return None
+        prox: torch.Tensor | None = None
+        for name, param in self.model.named_parameters():
+            g = snapshot.get(name)
+            if g is None or g.shape != param.shape:
+                continue
+            term = (param - g).pow(2).sum()
+            prox = term if prox is None else prox + term
+        if prox is None:
+            return None
+        return 0.5 * mu * prox
 
     # ────────────────────────────────────────────────────────────────
     # Inference

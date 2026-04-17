@@ -19,4 +19,3 @@ def fake_ros() -> Iterator[FakeROSEnvironment]:
     """
     with FakeROSEnvironment() as env:
         yield env
-

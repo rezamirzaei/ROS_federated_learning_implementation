@@ -18,3 +18,10 @@ repos:
       - id: check-merge-conflict
       - id: debug-statements
       - id: mixed-line-ending
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.21.2
+    hooks:
+      - id: gitleaks
+        name: gitleaks (secrets scan)
+        # Scans the staged diff; nightly CI runs a full-history scan.
+        stages: [pre-commit]

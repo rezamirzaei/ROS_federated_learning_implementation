@@ -76,9 +76,7 @@ def test_monitor_node_constructs_and_receives_status(fake_ros, tmp_path):
     assert any("status" in t or "metrics" in t for t in node.subscriptions)
 
     class _Msg:
-        data = json.dumps(
-            {"type": "registration", "robot_id": "robot_q"}
-        )
+        data = json.dumps({"type": "registration", "robot_id": "robot_q"})
 
     # Deliver a few messages to touch the dispatch code paths.
     if "/fl/robot_status" in fake_ros.subscriptions:
@@ -102,5 +100,3 @@ def test_mnist_federated_dirichlet_partition_shapes():
     flat = [idx for shard in shards for idx in shard]
     assert len(flat) == len(set(flat))
     assert set(flat).issubset(set(range(len(labels))))
-
-

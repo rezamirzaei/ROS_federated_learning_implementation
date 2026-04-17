@@ -1,0 +1,199 @@
+# fl-robots standalone dashboard — Kubernetes deployment manifests.
+#
+# Apply with:
+#   kubectl apply -f deploy/k8s/
+#
+# Requires a built & pushed image; the default tag here targets the image
+# produced by the `docker-standalone` CI job. Override with:
+#   kubectl set image deployment/fl-robots fl-robots=ghcr.io/<org>/fl-robots:<tag>
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: fl-robots
+  labels:
+    app.kubernetes.io/name: fl-robots
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fl-robots-config
+  namespace: fl-robots
+data:
+  FL_ROBOTS_RATE_WINDOW_S: "10"
+  FL_ROBOTS_RATE_MAX_HITS: "30"
+  FL_ROBOTS_READY_STALE_S: "5"
+  # Tighten the shipped CSP further for your org (remove 'unsafe-inline'
+  # if/when the bundled JS/CSS is refactored to eliminate inline handlers).
+  # FL_ROBOTS_CSP: "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; frame-ancestors 'none'"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fl-robots
+  namespace: fl-robots
+  labels:
+    app.kubernetes.io/name: fl-robots
+    app.kubernetes.io/component: dashboard
+spec:
+  replicas: 1
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: fl-robots
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: fl-robots
+        app.kubernetes.io/component: dashboard
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "5000"
+        prometheus.io/path: "/metrics"
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: fl-robots
+          image: ghcr.io/rezami/fl-robots-standalone:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 5000
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: fl-robots-config
+          # SLO-1 readiness: flip to NotReady whenever /api/ready 503s.
+          readinessProbe:
+            httpGet:
+              path: /api/ready
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 3
+            timeoutSeconds: 2
+          # Liveness uses the cheap health probe to avoid false-positive
+          # restart loops while the sim is warming up.
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            failureThreshold: 3
+          startupProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            failureThreshold: 30
+            periodSeconds: 2
+          resources:
+            requests:
+              cpu: 200m
+              memory: 256Mi
+            limits:
+              cpu: 1000m
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: results
+              mountPath: /app/results
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
+        - name: results
+          emptyDir:
+            sizeLimit: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fl-robots
+  namespace: fl-robots
+  labels:
+    app.kubernetes.io/name: fl-robots
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: fl-robots
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      protocol: TCP
+---
+# ServiceMonitor — requires the Prometheus Operator. Safe to leave applied
+# even without the CRD installed (kubectl will just report it unknown).
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: fl-robots
+  namespace: fl-robots
+  labels:
+    app.kubernetes.io/name: fl-robots
+    release: prometheus
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: fl-robots
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s
+      scrapeTimeout: 10s
+  namespaceSelector:
+    matchNames:
+      - fl-robots
+---
+# Prometheus alert rules, sourced from docs/prometheus-rules.yml so they
+# live next to the app. Edit docs/prometheus-rules.yml first and mirror here.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: fl-robots
+  namespace: fl-robots
+  labels:
+    app.kubernetes.io/name: fl-robots
+    release: prometheus
+spec:
+  groups:
+    - name: fl-robots.slo
+      rules:
+        - alert: FLRobotsReadinessDown
+          expr: up{job="fl-robots"} == 0
+          for: 2m
+          labels:
+            severity: page
+          annotations:
+            summary: "fl-robots readiness probe has been down for 2m"
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: fl-robots
+  namespace: fl-robots
+spec:
+  minAvailable: 0  # Single-replica demo — keep the budget permissive.
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: fl-robots
+

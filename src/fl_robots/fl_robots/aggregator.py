@@ -115,6 +115,15 @@ class AggregatorNode(BaseNode):  # type: ignore[misc,valid-type]
         self.min_robots = self.get_parameter("min_robots").value
         self.aggregation_timeout = self.get_parameter("aggregation_timeout").value
         self.auto_aggregate = self.get_parameter("auto_aggregate").value
+        # FL algorithm knobs — broadcast to clients on every global-model
+        # publish so robot agents apply the matching local loss term.
+        self.fl_algorithm = str(self.get_parameter("algorithm").value).lower()
+        if self.fl_algorithm not in ("fedavg", "fedprox"):
+            self.get_logger().warning(
+                f"Unknown algorithm '{self.fl_algorithm}', falling back to fedavg"
+            )
+            self.fl_algorithm = "fedavg"
+        self.proximal_mu = float(self.get_parameter("proximal_mu").value)
 
         self.get_logger().info("Initializing Federated Learning Aggregator")
         if LIFECYCLE_AVAILABLE:
@@ -261,6 +270,11 @@ class AggregatorNode(BaseNode):  # type: ignore[misc,valid-type]
         self.declare_parameter("aggregation_timeout", 30.0)
         self.declare_parameter("auto_aggregate", True)
         self.declare_parameter("participation_threshold", 0.5)
+        # FedAvg (McMahan 2017) vs FedProx (Li et al. 2020). When set to
+        # "fedprox" the aggregator broadcasts `proximal_mu` alongside each
+        # global model so clients apply the matching proximal loss term.
+        self.declare_parameter("algorithm", "fedavg")
+        self.declare_parameter("proximal_mu", 0.01)
 
     # ────────────────────────────────────────────────────────────────
     # Service Handlers
@@ -585,6 +599,8 @@ class AggregatorNode(BaseNode):  # type: ignore[misc,valid-type]
                 "participant_ids": participant_ids,
                 "participant_losses": p_losses,
                 "participant_accuracies": p_accs,
+                "algorithm": self.fl_algorithm,
+                "proximal_mu": self.proximal_mu if self.fl_algorithm == "fedprox" else 0.0,
                 "timestamp": time.time(),
             }
             self.aggregation_history.append(metrics)
@@ -623,6 +639,13 @@ class AggregatorNode(BaseNode):  # type: ignore[misc,valid-type]
             "type": "global_model",
             "round": self.current_round,
             "weights": weights_serializable,
+            # Per-round training config rides alongside the global weights so
+            # every client always knows which algorithm + μ to apply. Keep
+            # this payload shape stable: downstream tests assert on it.
+            "config": {
+                "algorithm": self.fl_algorithm,
+                "proximal_mu": self.proximal_mu if self.fl_algorithm == "fedprox" else 0.0,
+            },
             "timestamp": time.time(),
         }
 

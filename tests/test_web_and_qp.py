@@ -89,6 +89,7 @@ def test_status_exposes_full_capture_payload_for_ui(app_no_token):
     app, sim = app_no_token
     # Drive one capture so the ``events`` array is non-empty.
     import pytest as _pt
+
     _pt.importorskip("numpy")
     rid, robot = next(iter(sim.robots.items()))
     robot.pose.x, robot.pose.y = sim.target_position
@@ -101,8 +102,16 @@ def test_status_exposes_full_capture_payload_for_ui(app_no_token):
 
     assert "capture" in body
     cap = body["capture"]
-    for key in ("enabled", "target", "radius", "total_captures", "win_score",
-                "winner_id", "scoreboard", "events"):
+    for key in (
+        "enabled",
+        "target",
+        "radius",
+        "total_captures",
+        "win_score",
+        "winner_id",
+        "scoreboard",
+        "events",
+    ):
         assert key in cap, f"capture payload missing {key!r}"
     assert {"x", "y"} <= set(cap["target"])
     # Scoreboard ranked descending and includes every robot.
@@ -243,9 +252,7 @@ def test_qp_warm_start_does_not_regress_iterations():
     cold_iters = planner.last_iterations["r0"]
     planner.solve([robot], leader_position=(0.0, 0.0))
     warm_iters = planner.last_iterations["r0"]
-    assert warm_iters <= cold_iters, (
-        f"warm start regressed: cold={cold_iters}, warm={warm_iters}"
-    )
+    assert warm_iters <= cold_iters, f"warm start regressed: cold={cold_iters}, warm={warm_iters}"
 
 
 def test_qp_warm_cache_tolerates_stale_shapes():
@@ -471,4 +478,3 @@ def test_qp_planner_solve_with_refs_tracks_moving_ref():
     # Sanity: the plan progresses monotonically along +x.
     xs = [p.x for p in plan_moving.path]
     assert xs[-1] > xs[0]
-

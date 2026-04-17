@@ -33,6 +33,7 @@ from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from .controller import CommandRequest
 from .observability.logging import configure_logging
 from .observability.metrics import REGISTRY, update_from_snapshot
+from .observability.tracing import maybe_setup_tracing, span
 from .simulation import SimulationEngine
 
 logger = logging.getLogger(__name__)
@@ -188,9 +189,7 @@ OPENAPI_SCHEMA: dict = {
                     "400": {
                         "description": "Validation error",
                         "content": {
-                            "application/json": {
-                                "schema": {"$ref": "#/components/schemas/Error"}
-                            }
+                            "application/json": {"schema": {"$ref": "#/components/schemas/Error"}}
                         },
                     },
                     "401": {"description": "Missing/invalid bearer token"},
@@ -227,7 +226,12 @@ OPENAPI_SCHEMA: dict = {
             "get": {
                 "summary": "Per-robot training history (local loss / accuracy per tick)",
                 "parameters": [
-                    {"name": "robot_id", "in": "path", "required": True, "schema": {"type": "string"}},
+                    {
+                        "name": "robot_id",
+                        "in": "path",
+                        "required": True,
+                        "schema": {"type": "string"},
+                    },
                     {"name": "limit", "in": "query", "schema": {"type": "integer"}},
                 ],
                 "responses": {"200": {"description": "JSON series"}},
@@ -315,6 +319,41 @@ def create_app(simulation: SimulationEngine | None = None) -> Flask:
     limiter = _SlidingWindowRateLimiter(_RATE_WINDOW_S, _RATE_MAX_HITS)
     app.config["RATE_LIMITER"] = limiter
 
+    # Best-effort OpenTelemetry setup — no-op unless FL_ROBOTS_OTEL=1 and
+    # the `otel` extra is installed. Call is idempotent.
+    maybe_setup_tracing(service_name="fl-robots-standalone")
+
+    # ── Security headers ─────────────────────────────────────────────
+    # Applied to every response (including static assets and errors).
+    # CSP is deliberately tight: the dashboard ships its own JS/CSS
+    # bundles and talks only to same-origin JSON endpoints. Override
+    # via FL_ROBOTS_CSP if you embed in a parent frame.
+    _default_csp = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data:; "
+        "connect-src 'self'; "
+        "font-src 'self' data:; "
+        "frame-ancestors 'none'; "
+        "base-uri 'self'; "
+        "form-action 'self'"
+    )
+    _csp = os.environ.get("FL_ROBOTS_CSP", _default_csp)
+
+    @app.after_request
+    def _security_headers(response: Response) -> Response:
+        response.headers.setdefault("Content-Security-Policy", _csp)
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("Referrer-Policy", "no-referrer")
+        response.headers.setdefault(
+            "Permissions-Policy",
+            "accelerometer=(), camera=(), geolocation=(), gyroscope=(), "
+            "magnetometer=(), microphone=(), payment=(), usb=()",
+        )
+        return response
+
     @app.get("/")
     def index() -> str:
         return render_template("standalone.html")
@@ -374,7 +413,8 @@ def create_app(simulation: SimulationEngine | None = None) -> Flask:
 
         sim = _get_simulation(app)
         try:
-            sim.issue_command(cmd.command)
+            with span("fl_robots.command", command=cmd.command):
+                sim.issue_command(cmd.command)
         except ValueError as exc:
             return jsonify({"ok": False, "error": str(exc)}), 400
 

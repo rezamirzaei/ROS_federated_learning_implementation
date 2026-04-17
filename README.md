@@ -36,7 +36,7 @@ Reproducible MNIST FedAvg headline (seed=42, 4 clients, 400 samples / client, CP
 
 ### Application
 - **🤖 Multi-Robot Federated Learning** — 3+ robot agents learning collaboratively
-- **🧠 FedAvg *and* FedProx** — baseline + Li et al. 2020 proximal-term variant for non-IID stability
+- **🧠 FedAvg *and* FedProx** — baseline + Li et al. 2020 proximal-term variant for non-IID stability. Runtime-wired: the aggregator broadcasts `algorithm` + `proximal_mu` alongside the global model and every robot agent applies the matching proximal penalty to its local loss.
 - **🎲 Multi-seed benchmarks** — `--num-seeds N` reports mean ± std across seeds, not cherry-picked numbers
 - **🌐 MVC Web Dashboard** — standalone Flask UI with templates, static assets, and controller routes
 - **📨 Topic-Level Message Passing** — in-process ROS-style message bus for commands, telemetry, plans, and aggregation events

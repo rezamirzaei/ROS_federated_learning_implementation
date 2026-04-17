@@ -116,4 +116,3 @@ def test_openapi_lists_new_paths(client):
     assert "/api/history/mpc" in paths
     assert "/api/history/localization" in paths
     assert "/api/mpc/explainer" in paths
-

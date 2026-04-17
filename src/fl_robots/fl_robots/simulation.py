@@ -228,9 +228,7 @@ class SimulationEngine:
         self._target_rng = random.Random(1337)
         #: Recent capture events for UI / dashboards. Each entry is
         #: ``{"tick", "robot_id", "score", "target": {"x","y"}, "new_target": {"x","y"}}``.
-        self.capture_events: deque[dict[str, Any]] = deque(
-            maxlen=cfg.max_capture_history
-        )
+        self.capture_events: deque[dict[str, Any]] = deque(maxlen=cfg.max_capture_history)
         self.total_captures: int = 0
         #: Robot that scored the most recent capture — ineligible again
         #: until ``_capture_cooldown_until`` (exclusive).
@@ -881,8 +879,7 @@ class SimulationEngine:
             x = self._target_rng.uniform(-bounds, bounds)
             y = self._target_rng.uniform(-bounds, bounds)
             if all(
-                math.hypot(r.pose.x - x, r.pose.y - y) >= min_dist
-                for r in self.robots.values()
+                math.hypot(r.pose.x - x, r.pose.y - y) >= min_dist for r in self.robots.values()
             ):
                 return (x, y)
         # Fall back to an unconstrained sample — the next tick will sort it out.
@@ -900,7 +897,9 @@ class SimulationEngine:
         ids = list(positions)
         for i in ids:
             px, py = positions[i]
-            scored = [(math.hypot(px - positions[j][0], py - positions[j][1]), j) for j in ids if j != i]
+            scored = [
+                (math.hypot(px - positions[j][0], py - positions[j][1]), j) for j in ids if j != i
+            ]
             scored.sort()
             out[i] = [j for _, j in scored[:k]]
         return out

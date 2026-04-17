@@ -17,15 +17,25 @@ RUN python -m pip install --upgrade pip setuptools wheel && \
     python -m pip install --extra-index-url https://download.pytorch.org/whl/cpu \
         ".[ml]"
 
+# Drop privileges. All artefacts live under /app (writable by appuser) and
+# /tmp (world-writable). Avoids the "running containers as root" OWASP
+# finding in standard scans.
+RUN groupadd --system --gid 1000 appuser && \
+    useradd --system --uid 1000 --gid 1000 --home /app appuser && \
+    chown -R appuser:appuser /app
+USER appuser
+
 EXPOSE 5000
 
 CMD ["python", "main.py", "run", "--host", "0.0.0.0", "--port", "5000"]
 
 FROM standalone-runtime AS standalone-test
 
+USER root
 COPY tests /app/tests
-
-RUN python -m pip install "pytest>=7.4.0" "pytest-cov>=4.1.0"
+RUN python -m pip install "pytest>=7.4.0" "pytest-cov>=4.1.0" && \
+    chown -R appuser:appuser /app/tests
+USER appuser
 
 CMD ["python", "-m", "pytest", "tests/", "-v", "--tb=short"]
 
@@ -77,20 +87,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-humble-ros2launch \
     && rm -rf /var/lib/apt/lists/*
 
-RUN pip3 install --no-cache-dir \
-    --extra-index-url https://download.pytorch.org/whl/cpu \
-    "torch>=2.0.0,<=2.2.2" \
-    "numpy>=1.24.0,<2.0" \
-    "pydantic>=2.0.0" \
-    "scipy>=1.10.0" \
-    "scikit-learn>=1.3.0" \
-    "flask>=3.0.0" \
-    "flask-cors>=4.0.0" \
-    "flask-socketio>=5.3.0" \
-    "python-socketio>=5.0.0" \
-    "jinja2>=3.1.0" \
-    "eventlet>=0.33.0" \
-    "matplotlib>=3.7.0"
+# Install Python runtime deps straight from pyproject.toml extras so there is
+# a SINGLE source of truth for pins — no drift between the ROS image and the
+# standalone image. We copy only the metadata files first to maximise layer
+# cache reuse.
+WORKDIR /app
+COPY pyproject.toml README.md /app/
+COPY src/fl_robots/fl_robots/__init__.py /app/src/fl_robots/fl_robots/__init__.py
+RUN pip3 install --no-cache-dir --upgrade pip setuptools wheel && \
+    pip3 install --no-cache-dir \
+        --extra-index-url https://download.pytorch.org/whl/cpu \
+        ".[ml,ros]"
 
 WORKDIR /ros2_ws
 
@@ -101,6 +108,15 @@ COPY docker/ros_entrypoint.sh /ros_entrypoint.sh
 RUN chmod +x /ros_entrypoint.sh && \
     echo "source /opt/ros/humble/setup.bash" >> /root/.bashrc && \
     echo "source /ros2_ws/install/setup.bash" >> /root/.bashrc
+
+# Non-root runtime user. The ROS entrypoint still sources system setup
+# from /opt/ros (world-readable), so appuser can launch nodes fine.
+RUN groupadd --system --gid 1000 appuser && \
+    useradd --system --uid 1000 --gid 1000 --home /ros2_ws appuser && \
+    chown -R appuser:appuser /ros2_ws && \
+    echo "source /opt/ros/humble/setup.bash" >> /home/appuser/.bashrc 2>/dev/null || true && \
+    echo "source /ros2_ws/install/setup.bash" >> /home/appuser/.bashrc 2>/dev/null || true
+USER appuser
 
 ENTRYPOINT ["/ros_entrypoint.sh"]
 CMD ["bash"]

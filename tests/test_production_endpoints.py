@@ -113,4 +113,3 @@ def test_command_endpoint_is_rate_limited(paused_app, monkeypatch):
         assert "Rate limit" in body["error"]
     finally:
         sim.shutdown()
-

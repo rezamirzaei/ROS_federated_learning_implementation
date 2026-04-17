@@ -1,10 +1,15 @@
 .git
 .github
 .idea
+.vscode
 .pytest_cache
 .mypy_cache
 .ruff_cache
+.hypothesis
 .venv
+.coverage
+coverage.xml
+htmlcov/
 __pycache__/
 **/__pycache__/
 *.py[cod]
@@ -17,7 +22,11 @@ logs/
 models/
 results/
 
+# Large MNIST raw bytes are re-downloaded on demand; never ship them.
+data/MNIST/raw/
+
 ROS/
 fl_robots/
 
 .copilot/
+.DS_Store

@@ -156,8 +156,7 @@ def _local_train(
     global_params: list | None = None
     if proximal_mu > 0.0 and global_state is not None:
         global_params = [
-            global_state[name].detach().to(device)
-            for name, _ in model.named_parameters()
+            global_state[name].detach().to(device) for name, _ in model.named_parameters()
         ]
 
     X = X.to(device)
@@ -286,6 +285,14 @@ def run_benchmark(cfg: BenchmarkConfig) -> dict[str, Any]:
         )
 
     wall = time.perf_counter() - total_start
+
+    # Communication-cost accounting. Each round every client uploads one
+    # state dict and downloads one. We report both aggregate and per-round
+    # bytes so callers can reason about bandwidth budgets.
+    param_bytes = sum(t.numel() * t.element_size() for t in global_model.state_dict().values())
+    bytes_per_round = param_bytes * cfg.clients * 2  # up + down
+    total_bytes = bytes_per_round * max(len(per_round), 1)
+
     return {
         "config": asdict(cfg),
         "rounds": [asdict(r) for r in per_round],
@@ -294,6 +301,9 @@ def run_benchmark(cfg: BenchmarkConfig) -> dict[str, Any]:
             "final_test_loss": per_round[-1].test_loss if per_round else None,
             "best_test_accuracy": max((r.test_accuracy for r in per_round), default=None),
             "total_wall_seconds": round(wall, 2),
+            "param_bytes_per_client": param_bytes,
+            "bytes_per_round": bytes_per_round,
+            "total_bytes": total_bytes,
         },
     }
 
@@ -318,7 +328,7 @@ def run_multi_seed(cfg: BenchmarkConfig) -> dict[str, Any]:
     bests = [r["summary"]["best_test_accuracy"] for r in seed_runs]
     walls = [r["summary"]["total_wall_seconds"] for r in seed_runs]
 
-    def _stat(xs: list[float]) -> dict[str, float]:
+    def _stat(xs: list[float]) -> dict[str, Any]:
         return {
             "mean": round(mean(xs), 3),
             "std": round(stdev(xs), 3) if len(xs) > 1 else 0.0,

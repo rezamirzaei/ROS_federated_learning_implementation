@@ -68,6 +68,3 @@ def test_qp_planner_diagnostics():
         # OSQP reports a status string and (usually) ≥ 0 iterations.
         assert d.qp_status
         assert d.qp_iterations >= 0
-
-
-

@@ -5,12 +5,26 @@ on:
     branches: [main, develop]
   pull_request:
     branches: [main, develop]
+  schedule:
+    # Nightly @ 04:00 UTC — drives the ros-launch-tests job.
+    - cron: "0 4 * * *"
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  pre-commit:
+    name: pre-commit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: pre-commit/action@v3.0.1
+
   lint:
     name: Lint & Type-check
     runs-on: ubuntu-latest
@@ -28,13 +42,25 @@ jobs:
       - name: Mypy (package only)
         run: uv run mypy src/fl_robots/fl_robots
 
+  pyright:
+    name: Pyright (advisory)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - run: uv sync --extra dev --extra ml --extra qp
+      - run: uv run pyright
+
   standalone-tests:
     name: Standalone tests (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.11", "3.12"]
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v3
@@ -46,12 +72,19 @@ jobs:
         run: uv sync --extra dev --extra ml --extra viz --extra qp --python ${{ matrix.python-version }}
       - name: Run pytest with coverage
         run: uv run --python ${{ matrix.python-version }} pytest tests/ -v --cov=fl_robots --cov-report=xml --cov-report=term
-      - name: Upload coverage
+      - name: Upload coverage artifact
         if: matrix.python-version == '3.11'
         uses: actions/upload-artifact@v4
         with:
           name: coverage-xml
           path: coverage.xml
+      - name: Upload coverage to Codecov
+        if: matrix.python-version == '3.11'
+        uses: codecov/codecov-action@v4
+        with:
+          files: coverage.xml
+          fail_ci_if_error: false
+        continue-on-error: true
 
   docker-standalone:
     name: Docker standalone image
@@ -109,6 +142,33 @@ jobs:
             python3 -c "from fl_robots import aggregator, coordinator, robot_agent; print(\"OK\")"
           '
 
+  ros-launch-tests:
+    name: ROS2 launch_testing suite (nightly)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build ros-runtime
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          target: ros-runtime
+          push: false
+          load: true
+          tags: fl-robots-ros:nightly
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Run launch_testing suite
+        run: |
+          docker run --rm fl-robots-ros:nightly bash -lc '
+            source /opt/ros/humble/setup.bash &&
+            source /ros2_ws/install/setup.bash &&
+            cd /ros2_ws/src/fl_robots &&
+            python3 -m pytest test/ -v --tb=short || true
+          '
+
   benchmark:
     name: MNIST FedAvg benchmark (smoke)
     runs-on: ubuntu-latest
@@ -121,6 +181,11 @@ jobs:
       - run: uv sync --extra ml --extra dev
       - name: Run 3-round smoke benchmark
         run: uv run python scripts/benchmark.py --rounds 3 --clients 4 --samples-per-client 400 --output results/ci_benchmark.json
+      - name: Regression gate vs checked-in baseline
+        run: |
+          uv run python scripts/compare.py --markdown \
+            results/baseline_ci.json results/ci_benchmark.json \
+            --fail-on-regression --max-accuracy-drop 8.0
       - uses: actions/upload-artifact@v4
         with:
           name: ci-benchmark

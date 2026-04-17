@@ -67,9 +67,7 @@ def test_aggregator_collects_weights_and_aggregates(fake_ros):
         assert rid in node.robots
 
     # Build a weight payload matching the model shape.
-    weights = {
-        key: arr.tolist() for key, arr in node.global_model.get_weights().items()
-    }
+    weights = {key: arr.tolist() for key, arr in node.global_model.get_weights().items()}
     for rid in ("robot_1", "robot_2"):
         payload = {
             "type": "local_weights",
@@ -80,9 +78,7 @@ def test_aggregator_collects_weights_and_aggregates(fake_ros):
             "loss": 0.9,
             "accuracy": 70.0,
         }
-        fake_ros.publish(
-            f"/fl/{rid}/model_weights", _Msg(json.dumps(payload))
-        )
+        fake_ros.publish(f"/fl/{rid}/model_weights", _Msg(json.dumps(payload)))
 
     # Drive an aggregation explicitly — auto-aggregation requires a timer fire.
     result = node._perform_aggregation()
@@ -144,9 +140,7 @@ def test_coordinator_handles_robot_status_updates(fake_ros):
     node = CoordinatorNode()
 
     class _Msg:
-        data = json.dumps(
-            {"type": "registration", "robot_id": "robot_x"}
-        )
+        data = json.dumps({"type": "registration", "robot_id": "robot_x"})
 
     fake_ros.publish("/fl/robot_status", _Msg())
     assert "robot_x" in node.registered_robots
@@ -176,14 +170,10 @@ def test_robot_agent_consumes_global_model(fake_ros):
     node = RobotAgentNode()
 
     # Build a payload matching the model shape.
-    global_weights = {
-        k: v.tolist() for k, v in node.model.get_weights().items()
-    }
+    global_weights = {k: v.tolist() for k, v in node.model.get_weights().items()}
 
     class _Msg:
-        data = json.dumps(
-            {"type": "global_model", "round": 5, "weights": global_weights}
-        )
+        data = json.dumps({"type": "global_model", "round": 5, "weights": global_weights})
 
     fake_ros.publish("/fl/global_model", _Msg())
 
@@ -210,7 +200,3 @@ def test_robot_agent_reacts_to_training_command(fake_ros):
     )
     # The primary contract is "does not raise"; deeper state checks are in
     # the dedicated aggregator/coordinator tests above.
-
-
-
-

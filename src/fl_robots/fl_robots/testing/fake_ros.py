@@ -147,7 +147,9 @@ class FakeActionServer:
 class FakeNode:
     """Minimal functional stand-in for ``rclpy.node.Node``."""
 
-    def __init__(self, name: str = "fake", *, environment: FakeROSEnvironment | None = None, **_: Any) -> None:
+    def __init__(
+        self, name: str = "fake", *, environment: FakeROSEnvironment | None = None, **_: Any
+    ) -> None:
         self._name = name
         # If no explicit env provided, bind to the currently-active one so
         # that ``BaseNode`` references captured at module import time still
@@ -177,13 +179,17 @@ class FakeNode:
         self._parameters[name] = param
         return param
 
-    def declare_parameters(self, namespace: str, parameters: list[tuple[str, Any]]) -> list[_Parameter]:
+    def declare_parameters(
+        self, namespace: str, parameters: list[tuple[str, Any]]
+    ) -> list[_Parameter]:
         return [self.declare_parameter(name, default) for name, default in parameters]
 
     def get_parameter(self, name: str) -> _Parameter:
         return self._parameters.get(name, _Parameter(None))
 
-    def set_parameters(self, params: list[Any]) -> list[Any]:  # pragma: no cover - rarely used in tests
+    def set_parameters(
+        self, params: list[Any]
+    ) -> list[Any]:  # pragma: no cover - rarely used in tests
         for p in params:
             name = getattr(p, "name", None)
             if name:
@@ -336,4 +342,3 @@ class FakeROSEnvironment:
 
 
 _CURRENT_ENV: FakeROSEnvironment | None = None
-

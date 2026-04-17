@@ -33,9 +33,7 @@ def _fake_federated(cfg):
 
 @pytest.fixture(autouse=True)
 def stub_mnist(monkeypatch):
-    monkeypatch.setattr(
-        "fl_robots.data.make_federated_mnist", _fake_federated, raising=True
-    )
+    monkeypatch.setattr("fl_robots.data.make_federated_mnist", _fake_federated, raising=True)
 
 
 def _cfg(**over) -> bm.BenchmarkConfig:
@@ -98,15 +96,19 @@ def test_multi_seed_reports_mean_and_std(tmp_path):
 def test_cli_main_writes_json_file(tmp_path):
     out = tmp_path / "bench.json"
     argv = [
-        "--rounds", "1",
-        "--clients", "2",
-        "--samples-per-client", "32",
-        "--batch-size", "16",
-        "--output", str(out),
+        "--rounds",
+        "1",
+        "--clients",
+        "2",
+        "--samples-per-client",
+        "32",
+        "--batch-size",
+        "16",
+        "--output",
+        str(out),
     ]
     rc = bm.main(argv)
     assert rc == 0
     data = json.loads(Path(out).read_text())
     assert "summary" in data
     assert "rounds" in data
-

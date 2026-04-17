@@ -299,4 +299,3 @@ class TOASnapshot(BaseModel):
             "consensus_gap": self.consensus_gap,
             "estimates": [e.as_dict() for e in self.estimates],
         }
-

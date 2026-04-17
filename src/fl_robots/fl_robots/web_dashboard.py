@@ -347,6 +347,47 @@ class WebDashboardNode(Node):
         app = Flask(__name__, template_folder=str(template_dir), static_folder=str(static_dir))
         CORS(app)
 
+        # Same security headers baseline as standalone_web.py. Kept in sync
+        # manually — both dashboards serve the same static asset family so
+        # policies should not drift between them.
+        @app.after_request
+        def _security_headers(response):  # pragma: no cover - requires flask-cors
+            response.headers.setdefault(
+                "Content-Security-Policy",
+                os.environ.get(
+                    "FL_ROBOTS_CSP",
+                    "default-src 'self'; script-src 'self' 'unsafe-inline'; "
+                    "style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
+                    "connect-src 'self' ws: wss:; font-src 'self' data:; "
+                    "frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
+                ),
+            )
+            response.headers.setdefault("X-Frame-Options", "DENY")
+            response.headers.setdefault("X-Content-Type-Options", "nosniff")
+            response.headers.setdefault("Referrer-Policy", "no-referrer")
+            response.headers.setdefault(
+                "Permissions-Policy",
+                "accelerometer=(), camera=(), geolocation=(), gyroscope=(), "
+                "magnetometer=(), microphone=(), payment=(), usb=()",
+            )
+            return response
+
+        # Prometheus exposition — shares the global REGISTRY with
+        # ``standalone_web.py`` and ``observability/metrics.py`` so scrapers
+        # see the same metric names in both deployment modes.
+        try:
+            from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+
+            from .observability.metrics import REGISTRY
+
+            @app.route("/metrics")
+            def prom_metrics():  # pragma: no cover - scraped by tests elsewhere
+                from flask import Response as _Resp
+
+                return _Resp(generate_latest(REGISTRY), mimetype=CONTENT_TYPE_LATEST)
+        except ImportError:  # pragma: no cover
+            pass
+
         node = self
 
         # Initialize Socket.IO if available

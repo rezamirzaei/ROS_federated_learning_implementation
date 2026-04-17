@@ -119,4 +119,3 @@ class ConstantVelocityTargetPredictor:
     def state(self) -> tuple[float, float, float, float]:
         """Current ``(x, y, vx, vy)`` — exposed for tests and snapshots."""
         return self._x, self._y, self._vx, self._vy
-
