@@ -1,5 +1,5 @@
 import os
-from glob import glob
+from pathlib import Path
 
 from setuptools import find_packages, setup
 
@@ -7,11 +7,12 @@ package_name = "fl_robots"
 
 # Collect web template and static files for data_files
 web_data_files = []
-web_base = os.path.join(package_name, "web")
-for dirpath, dirnames, filenames in os.walk(web_base):
+web_base = Path(package_name) / "web"
+for dirpath_str, _dirnames, filenames in os.walk(str(web_base)):
     if filenames:
-        install_dir = os.path.join("share", package_name, dirpath)
-        files = [os.path.join(dirpath, f) for f in filenames]
+        dirpath = Path(dirpath_str)
+        install_dir = str(Path("share") / package_name / dirpath)
+        files = [str(dirpath / f) for f in filenames]
         web_data_files.append((install_dir, files))
 
 setup(
@@ -23,11 +24,14 @@ setup(
         ("share/" + package_name, ["package.xml"]),
         # Launch files
         (
-            os.path.join("share", package_name, "launch"),
-            glob(os.path.join("launch", "*launch.[pxy][yma]*")),
+            str(Path("share") / package_name / "launch"),
+            [str(p) for p in sorted(Path("launch").glob("*launch.[pxy][yma]*"))],
         ),
         # Config files
-        (os.path.join("share", package_name, "config"), glob(os.path.join("config", "*.yaml"))),
+        (
+            str(Path("share") / package_name / "config"),
+            [str(p) for p in sorted(Path("config").glob("*.yaml"))],
+        ),
     ]
     + web_data_files,
     # Include package data (web templates and static files)

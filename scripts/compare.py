@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import sys
 from pathlib import Path
 from typing import Any
@@ -124,27 +125,32 @@ def main(argv: list[str] | None = None) -> int:
     name_a = args.baseline.stem
     name_b = args.candidate.stem
 
-    print(
-        render_markdown(a, b, name_a=name_a, name_b=name_b)
-        if args.markdown
-        else render_plain(a, b, name_a=name_a, name_b=name_b)
+    _log = logging.getLogger(__name__)
+
+    sys.stdout.write(
+        (
+            render_markdown(a, b, name_a=name_a, name_b=name_b)
+            if args.markdown
+            else render_plain(a, b, name_a=name_a, name_b=name_b)
+        )
+        + "\n"
     )
 
     if args.fail_on_regression:
         acc_a = _extract_final_accuracy(a)
         acc_b = _extract_final_accuracy(b)
         if acc_a is None or acc_b is None:
-            print("\nERROR: missing final_test_accuracy in one of the reports", file=sys.stderr)
+            _log.error("missing final_test_accuracy in one of the reports")
             return 2
         drop = acc_a - acc_b
         if drop > args.max_accuracy_drop:
-            print(
-                f"\nREGRESSION: final accuracy dropped {drop:.3f} pp "
-                f"(tolerance {args.max_accuracy_drop:.3f} pp)",
-                file=sys.stderr,
+            _log.error(
+                "REGRESSION: final accuracy dropped %.3f pp (tolerance %.3f pp)",
+                drop,
+                args.max_accuracy_drop,
             )
             return 1
-        print(f"\nOK: accuracy delta {-drop:+.3f} pp (tolerance ±{args.max_accuracy_drop:.3f} pp)")
+        _log.info("OK: accuracy delta %+.3f pp (tolerance ±%.3f pp)", -drop, args.max_accuracy_drop)
     return 0
 
 

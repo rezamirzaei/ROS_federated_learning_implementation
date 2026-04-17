@@ -18,6 +18,9 @@ from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import Node
 
+# Bind to all interfaces inside Docker containers.
+_ALL_INTERFACES = "0.0.0.0"  # noqa: S104
+
 
 def generate_launch_description() -> LaunchDescription:
     # Declare launch arguments
@@ -169,7 +172,7 @@ def generate_launch_description() -> LaunchDescription:
                 parameters=[
                     {
                         "port": 5000,
-                        "host": "0.0.0.0",
+                        "host": _ALL_INTERFACES,
                         "output_dir": "/ros2_ws/results",
                     }
                 ],

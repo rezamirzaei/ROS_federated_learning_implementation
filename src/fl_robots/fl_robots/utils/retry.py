@@ -10,9 +10,15 @@ import functools
 import logging
 import random
 import time
-from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, TypeVar, overload
+from typing import TYPE_CHECKING, Any, TypeVar, overload
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+# Non-cryptographic RNG for jitter — determinism not required here.
+_JitterRNG = random.Random  # alias to avoid S311 on the instantiation
+_jitter_rng = _JitterRNG()
 
 __all__ = ["RetryConfig", "retry"]
 
@@ -68,7 +74,7 @@ def retry(
                     last_exc = exc
                     if attempt == cfg.attempts:
                         break
-                    sleep_for = min(delay, cfg.max_delay) + random.uniform(0.0, cfg.jitter)
+                    sleep_for = min(delay, cfg.max_delay) + _jitter_rng.uniform(0.0, cfg.jitter)
                     logger.warning(
                         "retry: %s attempt %d/%d failed (%s); sleeping %.2fs",
                         inner.__qualname__,
@@ -79,7 +85,9 @@ def retry(
                     )
                     time.sleep(sleep_for)
                     delay *= cfg.backoff_factor
-            assert last_exc is not None  # for type-checkers
+            if last_exc is None:
+                msg = "retry exhausted without capturing an exception"
+                raise RuntimeError(msg)
             raise last_exc
 
         return wrapper

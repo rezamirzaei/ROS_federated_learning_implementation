@@ -13,31 +13,31 @@ environment that produced it.
 from __future__ import annotations
 
 import argparse
+import importlib.metadata as _md
 import json
+import logging
 import os
 import platform
-import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
 
 def _git_sha() -> str:
+    """Read the current git SHA from .git/HEAD without subprocess."""
     try:
-        return (
-            subprocess.check_output(["git", "rev-parse", "HEAD"], stderr=subprocess.DEVNULL)
-            .decode()
-            .strip()
-        )
+        head = Path(".git/HEAD").read_text().strip()
+        if head.startswith("ref:"):
+            ref_path = Path(".git") / head.split("ref: ", 1)[1]
+            return ref_path.read_text().strip()
+        return head
     except Exception:
         return "unknown"
 
 
 def _installed_packages() -> dict[str, str]:
     try:
-        import importlib.metadata as md
-
-        return {d.metadata["Name"]: d.version for d in md.distributions()}
+        return {d.metadata["Name"]: d.version for d in _md.distributions()}
     except Exception:
         return {}
 
@@ -62,9 +62,8 @@ def main() -> None:
     manifest = build_manifest()
     out = Path(args.output)
     out.parent.mkdir(parents=True, exist_ok=True)
-    with open(args.output, "w") as f:
-        json.dump(manifest, f, indent=2, default=str)
-    print(f"Wrote environment manifest to {args.output}")
+    out.write_text(json.dumps(manifest, indent=2, default=str))
+    logging.getLogger(__name__).info("Wrote environment manifest to %s", args.output)
 
 
 if __name__ == "__main__":

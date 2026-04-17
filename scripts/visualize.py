@@ -13,6 +13,7 @@ Run this after training completes to visualize:
 from __future__ import annotations
 
 import json
+import logging
 import os
 import sys
 from pathlib import Path
@@ -24,12 +25,15 @@ from fl_robots.results_artifacts import (
     resolve_summary_path,
 )
 
+logging.basicConfig(level=logging.INFO, format="%(message)s")
+log = logging.getLogger(__name__)
+
 try:
     import matplotlib.pyplot as plt
     import numpy as np
 except ImportError:
-    print("Please install visualization dependencies:")
-    print("  pip install matplotlib pandas numpy")
+    log.info("Please install visualization dependencies:")
+    log.info("  pip install matplotlib pandas numpy")
     sys.exit(1)
 
 
@@ -63,7 +67,7 @@ def load_results(results_dir: str | Path) -> dict[str, Any]:
 def plot_convergence(data: dict, output_dir: str) -> None:
     """Plot training convergence metrics."""
     if "aggregation" not in data:
-        print("No aggregation data found")
+        log.info("No aggregation data found")
         return
 
     agg_data = data["aggregation"]
@@ -114,7 +118,7 @@ def plot_convergence(data: dict, output_dir: str) -> None:
 
     output_path = Path(output_dir) / "training_analysis.png"
     plt.savefig(output_path, dpi=150, bbox_inches="tight")
-    print(f"Saved: {output_path}")
+    log.info(f"Saved: {output_path}")
 
     plt.show()
 
@@ -122,7 +126,7 @@ def plot_convergence(data: dict, output_dir: str) -> None:
 def plot_robot_metrics(data: dict, output_dir: str) -> None:
     """Plot per-robot training metrics."""
     if "robots" not in data:
-        print("No robot metrics found")
+        log.info("No robot metrics found")
         return
 
     robot_data = data["robots"]
@@ -185,7 +189,7 @@ def plot_robot_metrics(data: dict, output_dir: str) -> None:
 
     output_path = Path(output_dir) / "robot_metrics.png"
     plt.savefig(output_path, dpi=150, bbox_inches="tight")
-    print(f"Saved: {output_path}")
+    log.info(f"Saved: {output_path}")
 
     plt.show()
 
@@ -193,27 +197,27 @@ def plot_robot_metrics(data: dict, output_dir: str) -> None:
 def print_summary(data: dict) -> None:
     """Print training summary statistics."""
     if "summary" not in data:
-        print("No summary data found")
+        log.info("No summary data found")
         return
 
     summary = data["summary"]
 
-    print("\n" + "=" * 50)
-    print("  TRAINING SUMMARY")
-    print("=" * 50)
-    print(f"  Total Rounds: {summary.get('total_rounds', 'N/A')}")
-    print(f"  Total Aggregations: {summary.get('total_aggregations', 'N/A')}")
-    print(f"  Training Duration: {summary.get('elapsed_time', 0) / 60:.1f} minutes")
-    print(f"  Number of Robots: {len(summary.get('robots', []))}")
-    print("-" * 50)
+    log.info("\n" + "=" * 50)
+    log.info("  TRAINING SUMMARY")
+    log.info("=" * 50)
+    log.info(f"  Total Rounds: {summary.get('total_rounds', 'N/A')}")
+    log.info(f"  Total Aggregations: {summary.get('total_aggregations', 'N/A')}")
+    log.info(f"  Training Duration: {summary.get('elapsed_time', 0) / 60:.1f} minutes")
+    log.info(f"  Number of Robots: {len(summary.get('robots', []))}")
+    log.info("-" * 50)
 
     participation = summary.get("robot_participation", {})
     if participation:
-        print("  Robot Participation:")
+        log.info("  Robot Participation:")
         for robot, rounds in participation.items():
-            print(f"    {robot}: {rounds} rounds")
+            log.info(f"    {robot}: {rounds} rounds")
 
-    print("=" * 50 + "\n")
+    log.info("=" * 50 + "\n")
 
 
 def main() -> None:
@@ -225,15 +229,15 @@ def main() -> None:
         results_dir = sys.argv[1]
 
     if not Path(results_dir).exists():
-        print(f"Results directory not found: {results_dir}")
-        print("Usage: python visualize.py [results_directory]")
+        log.info(f"Results directory not found: {results_dir}")
+        log.info("Usage: python visualize.py [results_directory]")
         sys.exit(1)
 
-    print(f"Loading results from: {results_dir}")
+    log.info(f"Loading results from: {results_dir}")
     data = load_results(results_dir)
 
     if not data:
-        print("No result files found!")
+        log.info("No result files found!")
         sys.exit(1)
 
     # Print summary
@@ -243,7 +247,7 @@ def main() -> None:
     plot_convergence(data, results_dir)
     plot_robot_metrics(data, results_dir)
 
-    print("\nVisualization complete!")
+    log.info("\nVisualization complete!")
 
 
 if __name__ == "__main__":

@@ -647,17 +647,20 @@ def _install_signal_handlers(sim: SimulationEngine) -> None:
             # Re-raise as SystemExit so Flask's dev server unwinds.
             raise SystemExit(0)
 
-    for sig in (signal.SIGTERM, signal.SIGINT):
+    def _try_register(sig: signal.Signals) -> None:
         try:
             signal.signal(sig, _handler)
         except (ValueError, OSError):  # pragma: no cover - not on main thread
             pass
 
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        _try_register(sig)
+
 
 def main() -> None:
     """Entry point for the standalone web dashboard."""
     configure_logging()
-    print("\n🚀  Starting standalone FL + MPC dashboard at http://127.0.0.1:5000\n")
+    logger.info("🚀  Starting standalone FL + MPC dashboard at http://127.0.0.1:5000")
     app = create_app()
     sim = _get_simulation(app)
     _install_signal_handlers(sim)

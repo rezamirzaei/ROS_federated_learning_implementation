@@ -10,10 +10,12 @@ from __future__ import annotations
 
 import json
 import time
-from collections.abc import Iterator
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 # Skip if ROS2 is not available
 try:

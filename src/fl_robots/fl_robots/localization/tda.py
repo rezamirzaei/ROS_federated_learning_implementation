@@ -47,7 +47,6 @@ Convergence properties (verified by ``tests/test_localization.py``):
 from __future__ import annotations
 
 import math
-from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 
 try:
@@ -58,7 +57,12 @@ except ImportError:  # pragma: no cover - exercised by optional-deps CI
     np = None  # type: ignore[assignment]
     NUMPY_AVAILABLE = False
 
+from typing import TYPE_CHECKING
+
 from pydantic import BaseModel, ConfigDict, Field
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable, Mapping, Sequence
 
 __all__ = ["DistributedTOAEstimator", "TOAConfig", "TOAUpdateResult"]
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import sys
 
 from fl_robots.message_bus import MessageBus
 from fl_robots.mpc import DistributedMPCPlanner
@@ -12,6 +13,8 @@ from fl_robots.simulation import SimulationEngine
 from fl_robots.standalone_web import create_app
 
 __all__ = ["build_parser", "main", "run_tests"]
+
+log = logging.getLogger(__name__)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -34,15 +37,23 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _check(condition: bool, msg: str) -> None:
+    """Raise RuntimeError if *condition* is False."""
+    if not condition:
+        raise RuntimeError(msg)
+
+
 def run_tests() -> None:
     """Quick smoke-tests that validate simulation core, message bus, and MPC planner."""
-    print("=" * 55)
-    print("  QUICK COMPONENT TEST  (no Docker / ROS2 required)")
-    print("=" * 55)
+    logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stdout)
+
+    log.info("=" * 55)
+    log.info("  QUICK COMPONENT TEST  (no Docker / ROS2 required)")
+    log.info("=" * 55)
 
     pose = Pose2D(1.0, 2.0, 0.5)
-    assert pose.as_dict() == {"x": 1.0, "y": 2.0, "heading": 0.5}
-    print("  ✅ Pose2D OK")
+    _check(pose.as_dict() == {"x": 1.0, "y": 2.0, "heading": 0.5}, "Pose2D.as_dict mismatch")
+    log.info("  ✅ Pose2D OK")
 
     robot = RobotState(
         robot_id="r1",
@@ -51,16 +62,16 @@ def run_tests() -> None:
         formation_offset=(1.0, 0.0),
         goal=(2.0, 0.0),
     )
-    assert robot.as_dict()["robot_id"] == "r1"
-    print("  ✅ RobotState OK")
+    _check(robot.as_dict()["robot_id"] == "r1", "RobotState.robot_id mismatch")
+    log.info("  ✅ RobotState OK")
 
     bus = MessageBus(max_events=10)
     received: list[BusEvent] = []
     bus.subscribe("/test", received.append)
     bus.publish("/test", "tester", {"key": "value"})
-    assert len(received) == 1 and received[0].payload["key"] == "value"
-    assert bus.unsubscribe("/test", received.append) is True
-    print("  ✅ MessageBus pub/sub + unsubscribe OK")
+    _check(len(received) == 1 and received[0].payload["key"] == "value", "MessageBus pub failed")
+    _check(bus.unsubscribe("/test", received.append) is True, "MessageBus unsub failed")
+    log.info("  ✅ MessageBus pub/sub + unsubscribe OK")
 
     planner = DistributedMPCPlanner()
     robots = [
@@ -80,36 +91,37 @@ def run_tests() -> None:
         ),
     ]
     plans = planner.solve(robots, leader_position=(0.0, 0.0))
-    assert "r0" in plans and len(plans["r0"].path) == planner.horizon
-    print(f"  ✅ MPC planner OK — horizon={planner.horizon}, cost={plans['r0'].cost:.3f}")
+    _check("r0" in plans and len(plans["r0"].path) == planner.horizon, "MPC solve failed")
+    log.info("  ✅ MPC planner OK — horizon=%d, cost=%.3f", planner.horizon, plans["r0"].cost)
 
     sim = SimulationEngine(num_robots=3, auto_start=False)
     sim.step_once()
-    assert sim.tick_count == 1
+    _check(sim.tick_count == 1, "tick_count != 1 after step_once")
     snap = sim.snapshot()
-    assert len(snap["robots"]) == 3
-    print("  ✅ SimulationEngine single step + snapshot OK")
+    _check(len(snap["robots"]) == 3, "snapshot robot count mismatch")
+    log.info("  ✅ SimulationEngine single step + snapshot OK")
 
     sim.issue_command("start_training")
-    assert sim.training_active is True
+    _check(sim.training_active is True, "training_active not True")
     sim.issue_command("reset")
-    assert sim.tick_count == 0
-    print("  ✅ Command dispatch OK")
+    _check(sim.tick_count == 0, "tick_count != 0 after reset")
+    log.info("  ✅ Command dispatch OK")
 
     export = sim.export_results()
-    assert "exported_at" in export
-    print("  ✅ Export results OK")
+    _check("exported_at" in export, "export missing exported_at")
+    log.info("  ✅ Export results OK")
 
     try:
         sim.issue_command("invalid_cmd")
-        raise AssertionError("Should have raised ValueError")
+        msg = "Should have raised ValueError"
+        raise RuntimeError(msg)
     except ValueError:
         pass
-    print("  ✅ Invalid command rejection OK")
+    log.info("  ✅ Invalid command rejection OK")
 
-    print("-" * 55)
-    print("  All tests passed ✅")
-    print("=" * 55)
+    log.info("-" * 55)
+    log.info("  All tests passed ✅")
+    log.info("=" * 55)
 
 
 def main() -> None:
@@ -136,7 +148,7 @@ def main() -> None:
 
     app = create_app(simulation)
     try:
-        print(f"\n🤖 Dashboard: http://{host}:{port}\n")
+        log.info("🤖 Dashboard: http://%s:%d", host, port)
         app.run(host=host, port=port, debug=False)
     finally:
         simulation.shutdown()

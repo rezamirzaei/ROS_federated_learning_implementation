@@ -19,10 +19,15 @@ Call ``maybe_setup_tracing`` exactly once, at application startup
 
 from __future__ import annotations
 
+import logging
 import os
-from collections.abc import Iterator
 from contextlib import contextmanager, nullcontext
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+_log = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 __all__ = ["maybe_setup_tracing", "span", "tracing_enabled"]
 
@@ -83,9 +88,19 @@ def span(name: str, **attributes: Any) -> Iterator[Any]:
             yield ctx
         return
     with _TRACER.start_as_current_span(name) as s:
-        for key, value in attributes.items():
-            try:
-                s.set_attribute(key, value)
-            except Exception:  # pragma: no cover - defensive
-                pass
+        _safe_set_attributes(s, attributes)
         yield s
+
+
+def _safe_set_attribute(s: Any, key: str, value: Any) -> None:
+    """Set a single span attribute, silently ignoring failures."""
+    try:
+        s.set_attribute(key, value)
+    except Exception:  # pragma: no cover - defensive
+        _log.debug("Failed to set span attribute %s", key)
+
+
+def _safe_set_attributes(s: Any, attributes: dict[str, Any]) -> None:
+    """Set span attributes, ignoring any that fail."""
+    for key, value in attributes.items():
+        _safe_set_attribute(s, key, value)

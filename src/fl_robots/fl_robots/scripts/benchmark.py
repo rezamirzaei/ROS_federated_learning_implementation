@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import sys
 import time
 from dataclasses import asdict, dataclass
@@ -279,11 +280,13 @@ def run_benchmark(cfg: BenchmarkConfig) -> dict[str, Any]:
             elapsed_seconds=round(elapsed, 4),
         )
         per_round.append(rr)
-        print(
-            f"round={rr.round:>3}  train_loss={rr.train_loss:.4f}  "
-            f"test_loss={rr.test_loss:.4f}  test_acc={rr.test_accuracy:6.2f}%  "
-            f"elapsed={rr.elapsed_seconds:.2f}s",
-            flush=True,
+        logging.getLogger(__name__).info(
+            "round=%3d  train_loss=%.4f  test_loss=%.4f  test_acc=%6.2f%%  elapsed=%.2fs",
+            rr.round,
+            rr.train_loss,
+            rr.test_loss,
+            rr.test_accuracy,
+            rr.elapsed_seconds,
         )
 
     wall = time.perf_counter() - total_start
@@ -323,7 +326,9 @@ def run_multi_seed(cfg: BenchmarkConfig) -> dict[str, Any]:
     seed_runs = []
     for offset in range(cfg.num_seeds):
         sub_cfg = replace(cfg, seed=cfg.seed + offset, num_seeds=1)
-        print(f"\n── Seed {sub_cfg.seed} ({offset + 1}/{cfg.num_seeds}) ──")
+        logging.getLogger(__name__).info(
+            "\n── Seed %d (%d/%d) ──", sub_cfg.seed, offset + 1, cfg.num_seeds
+        )
         seed_runs.append(run_benchmark(sub_cfg))
 
     finals = [r["summary"]["final_test_accuracy"] for r in seed_runs]
@@ -358,8 +363,8 @@ def main(argv: list[str] | None = None) -> int:
     out_path = Path(cfg.output)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(result, indent=2))
-    print(f"\nWrote {out_path}")
-    print(json.dumps(result["summary"], indent=2))
+    logging.getLogger(__name__).info("Wrote %s", out_path)
+    logging.getLogger(__name__).info(json.dumps(result["summary"], indent=2))
     return 0
 
 

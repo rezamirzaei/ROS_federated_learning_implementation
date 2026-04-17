@@ -17,23 +17,18 @@ ROS_IMPORT_ERROR: ImportError | None = None
 ROS_AVAILABLE = False
 
 try:  # pragma: no cover - exercised only in a real ROS environment
-    import rclpy as rclpy
-    from geometry_msgs.msg import Twist as Twist
-    from rcl_interfaces.msg import SetParametersResult as SetParametersResult
-    from rclpy.action import ActionServer as ActionServer
-    from rclpy.action import CancelResponse as CancelResponse
-    from rclpy.action import GoalResponse as GoalResponse
+    import rclpy
+    from geometry_msgs.msg import Twist
+    from rcl_interfaces.msg import SetParametersResult
+    from rclpy.action import ActionServer, CancelResponse, GoalResponse
     from rclpy.callback_groups import (
-        MutuallyExclusiveCallbackGroup as MutuallyExclusiveCallbackGroup,
+        MutuallyExclusiveCallbackGroup,
+        ReentrantCallbackGroup,
     )
-    from rclpy.callback_groups import ReentrantCallbackGroup as ReentrantCallbackGroup
-    from rclpy.executors import MultiThreadedExecutor as MultiThreadedExecutor
-    from rclpy.node import Node as Node
-    from rclpy.qos import DurabilityPolicy as DurabilityPolicy
-    from rclpy.qos import HistoryPolicy as HistoryPolicy
-    from rclpy.qos import QoSProfile as QoSProfile
-    from rclpy.qos import ReliabilityPolicy as ReliabilityPolicy
-    from std_msgs.msg import String as String
+    from rclpy.executors import MultiThreadedExecutor
+    from rclpy.node import Node
+    from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
+    from std_msgs.msg import String
 
     ROS_AVAILABLE = True
 except ImportError as exc:  # pragma: no cover - exercised in local non-ROS dev
@@ -102,11 +97,11 @@ except ImportError as exc:  # pragma: no cover - exercised in local non-ROS dev
 
         def create_subscription(self, *args: Any, **kwargs: Any) -> None:
             require_ros()
-            return None
+            return
 
         def create_timer(self, *args: Any, **kwargs: Any) -> None:
             require_ros()
-            return None
+            return
 
         def create_publisher(self, *args: Any, **kwargs: Any) -> _Publisher:
             require_ros()

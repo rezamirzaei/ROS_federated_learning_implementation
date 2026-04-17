@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import time
-from collections.abc import Iterator
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 from fl_robots.controller import COMMAND_NAMES
 from fl_robots.simulation import SimulationEngine
 from fl_robots.standalone_web import OPENAPI_SCHEMA, create_app
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 
 @pytest.fixture

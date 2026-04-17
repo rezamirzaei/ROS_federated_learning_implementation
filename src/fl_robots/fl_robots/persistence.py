@@ -18,10 +18,12 @@ import json
 import sqlite3
 import threading
 import time
-from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 __all__ = ["MetricsStore"]
 

@@ -4,8 +4,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 from fl_robots.controller import (
@@ -28,6 +27,9 @@ from fl_robots.observability.metrics import (
 )
 from fl_robots.persistence import MetricsStore
 from fl_robots.results_artifacts import LEGACY_SUMMARY_JSON, SUMMARY_JSON, resolve_summary_path
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 # ── Controller ───────────────────────────────────────────────────────
 

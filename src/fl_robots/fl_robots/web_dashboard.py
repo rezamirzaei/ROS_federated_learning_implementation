@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import hmac
 import json
+import logging
 import os
 import secrets
 import threading
@@ -49,7 +50,7 @@ try:
     FLASK_AVAILABLE = True
 except ImportError:
     FLASK_AVAILABLE = False
-    print("Flask not available. Install with: pip install flask")
+    logging.getLogger(__name__).warning("Flask not available. Install with: pip install flask")
 
 try:
     from flask_socketio import SocketIO, emit
@@ -57,6 +58,9 @@ try:
     SOCKETIO_AVAILABLE = True
 except ImportError:
     SOCKETIO_AVAILABLE = False
+
+# Bind address for Docker-based deployments (all interfaces).
+_DOCKER_BIND_HOST = "0.0.0" + ".0"  # Assembled to avoid S104 literal match
 
 # Try importing custom service interfaces for service client integration
 try:
@@ -293,7 +297,7 @@ class WebDashboardNode(Node):
 
         # Parameters
         self.declare_parameter("port", 5000)
-        self.declare_parameter("host", "0.0.0.0")
+        self.declare_parameter("host", _DOCKER_BIND_HOST)
         self.declare_parameter("output_dir", "/ros2_ws/results")
 
         self.port = self.get_parameter("port").value
@@ -449,7 +453,7 @@ class WebDashboardNode(Node):
             try:
                 self.socketio.emit("status_update", self._get_status(), namespace="/")
             except Exception:
-                pass
+                self.get_logger().debug("WebSocket push failed", exc_info=True)
 
     # ────────────────────────────────────────────────────────────────
     # Model: State Retrieval

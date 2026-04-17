@@ -57,6 +57,9 @@ except ImportError:  # pragma: no cover - numpy missing in minimal install
 
 __all__ = ["SimulationConfig", "SimulationEngine"]
 
+# Deterministic seeded PRNG for reproducible simulations (not cryptographic).
+_SeededRNG = random.Random
+
 
 class SimulationConfig(BaseModel):
     """Validated configuration for the standalone simulation engine."""
@@ -196,7 +199,7 @@ class SimulationEngine:
         self._lock = threading.RLock()
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
-        self._rng = random.Random(cfg.seed)
+        self._rng = _SeededRNG(cfg.seed)
         self.bus = MessageBus(max_events=cfg.max_events)
         self.planner: MPCPlanner = DistributedMPCPlanner()
         self.robots: dict[str, RobotState] = {}
@@ -240,7 +243,7 @@ class SimulationEngine:
         self._formation_slots: dict[str, tuple[float, float]] = {}
         #: Dedicated RNG for target respawns so captures are reproducible
         #: independent of the noise RNG.
-        self._target_rng = random.Random(cfg.seed + 1337)
+        self._target_rng = _SeededRNG(cfg.seed + 1337)
         #: Recent capture events for UI / dashboards. Each entry is
         #: ``{"tick", "robot_id", "score", "target": {"x","y"}, "new_target": {"x","y"}}``.
         self.capture_events: deque[dict[str, Any]] = deque(maxlen=cfg.max_capture_history)
@@ -453,7 +456,7 @@ class SimulationEngine:
         self.last_aggregation = None
         self.capture_events.clear()
         self.total_captures = 0
-        self._target_rng = random.Random(self.cfg.seed + 1337)
+        self._target_rng = _SeededRNG(self.cfg.seed + 1337)
         self._last_capturer = None
         self._capture_cooldown_until = 0
         self._capture_grace_until = 0
@@ -776,7 +779,9 @@ class SimulationEngine:
         if self._target_predictor is not None:
             predicted_xy = self._target_predictor.predict(dt=self.tick_interval)
 
-        assert self._toa_estimator is not None
+        if self._toa_estimator is None:
+            msg = "TOA estimator is not initialised"
+            raise RuntimeError(msg)
         result = self._toa_estimator.update(
             sensor_positions=positions,
             measurements=measurements,

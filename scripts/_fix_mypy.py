@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 """Add type annotations to all functions missing them for mypy compliance."""
 
+import logging
 import re
 from pathlib import Path
+
+logging.basicConfig(level=logging.INFO, format="%(message)s")
+log = logging.getLogger(__name__)
 
 
 def fix_file(path: Path) -> int:
@@ -166,7 +170,7 @@ for f in files:
         c = fix_file(p)
         total += c
         if c:
-            print(f"  return types: {f} ({c} fixes)")
+            log.info("  return types: %s (%d fixes)", f, c)
 
 # Second pass for param annotations
 for f in files:
@@ -175,6 +179,6 @@ for f in files:
         c = fix_untyped_params(p)
         total += c
         if c:
-            print(f"  param types:  {f} ({c} fixes)")
+            log.info("  param types:  %s (%d fixes)", f, c)
 
-print(f"\nTotal fixes: {total}")
+log.info("\nTotal fixes: %d", total)

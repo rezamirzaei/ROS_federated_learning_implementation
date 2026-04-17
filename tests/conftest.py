@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 from fl_robots.testing.fake_ros import FakeROSEnvironment
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Iterator
 
 
 @pytest.fixture

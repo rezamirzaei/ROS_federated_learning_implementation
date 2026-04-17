@@ -113,8 +113,8 @@ class SimpleNavigationNet(nn.Module):
             x = self.bn3(x)
         x = F.relu(x)
 
-        x = self.fc_out(x)
-        return x
+        out: torch.Tensor = self.fc_out(x)
+        return out
 
     def predict(self, x: torch.Tensor) -> int:
         """Get the predicted action as an integer."""
@@ -224,9 +224,8 @@ class ObstacleAvoidanceNet(nn.Module):
         x = self.adaptive_pool(x)
         x = x.view(x.size(0), -1)
         x = F.relu(self.fc1(x))
-        x = self.fc2(x)
-
-        return x
+        out: torch.Tensor = self.fc2(x)
+        return out
 
     def get_weights(self) -> dict[str, np.ndarray]:
         weights = {}

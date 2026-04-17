@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 """Fix from __future__ import annotations ordering - must be first."""
 
+import logging
 from pathlib import Path
+
+logging.basicConfig(level=logging.INFO, format="%(message)s")
+log = logging.getLogger(__name__)
 
 files = (
     list(Path("tests").glob("*.py"))
@@ -29,9 +33,9 @@ for p in files:
         new_future_idx = future_idx - 1
         lines.insert(new_future_idx + 1, "from typing import Any")
         p.write_text("\n".join(lines))
-        print(f"Fixed __future__ ordering in {p}")
+        log.info("Fixed __future__ ordering in %s", p)
     elif any_idx is not None and future_idx is None:
         # Has Any but no __future__ - add __future__ before it
         lines.insert(any_idx, "from __future__ import annotations")
         p.write_text("\n".join(lines))
-        print(f"Added __future__ before Any in {p}")
+        log.info("Added __future__ before Any in %s", p)

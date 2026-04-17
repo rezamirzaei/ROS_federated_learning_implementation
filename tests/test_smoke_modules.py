@@ -28,13 +28,15 @@ def test_cli_build_parser_round_trip() -> None:
     assert ns.manual is True
 
 
-def test_cli_run_tests_executes_end_to_end(capsys: Any) -> None:
+def test_cli_run_tests_executes_end_to_end(caplog: Any) -> None:
     """The ``main test`` subcommand exercises the full SimulationEngine path."""
+    import logging
+
     from fl_robots.cli import run_tests
 
-    run_tests()
-    out = capsys.readouterr().out
-    assert "All tests passed" in out
+    with caplog.at_level(logging.INFO):
+        run_tests()
+    assert "All tests passed" in caplog.text
 
 
 # ── Digital twin ─────────────────────────────────────────────────────

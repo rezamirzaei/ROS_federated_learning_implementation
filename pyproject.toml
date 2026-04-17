@@ -176,27 +176,13 @@ ignore = [
     "RUF001", "RUF002", "RUF003",  # intentional unicode in docstrings / comments
     "RUF005",
     "RUF013",
-    "S101",   # assert is fine (tests + quick-smoke CLI)
-    "S104",   # binding 0.0.0.0 is intentional in containers
-    "S603",   # subprocess calls are controlled
-    "S607",   # partial executable path is fine
-    "T201",   # allow print() in CLI entrypoints
-    "RET504", # unnecessary assignment before return is clearer
-    "RET505", # else-after-return is fine for readability
-    "PTH123", # open() vs Path.open() — keep open() for clarity
-    "PERF203", # try-except in loop is acceptable
-    "PLC0415", # import inside function is intentional for optional/lazy deps
-    "PLC0414", # import alias re-exports are intentional in ros_compat
-    "S110",    # try-except-pass is acceptable for optional feature probing
-    "S311",    # pseudo-random is fine for simulation (not crypto)
-    "TC003",   # moving stdlib imports to TYPE_CHECKING is too noisy
-    "RET501",  # explicit return None aids readability in stubs
+    "PLC0415", # import inside function/try — required for optional-dependency pattern
+    "PERF203", # try-except in loop: retry loops and handler dispatch require this
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/*" = ["B011", "SIM117", "F401", "F841", "E402", "RUF059", "S101", "S106", "S110", "T201"]
-"scripts/*" = ["T201", "S101"]  # scripts use print() and assert
-"src/fl_robots/setup.py" = ["PTH118", "PTH207"]  # colcon setup.py uses os.path conventions
+"tests/*" = ["B011", "SIM117", "F401", "F841", "E402", "RUF059", "S101", "S110"]
+"src/fl_robots/test/*" = ["S101", "S110"]  # test files
 "src/fl_robots/fl_robots/ros_compat.py" = ["F401"]  # re-exports
 "src/fl_robots/fl_robots/aggregator.py" = ["F401"]  # ROS/interface fallback imports
 "src/fl_robots/fl_robots/robot_agent.py" = ["F401"]

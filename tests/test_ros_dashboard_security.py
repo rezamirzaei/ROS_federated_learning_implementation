@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import threading
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from fl_robots.web_dashboard import build_dashboard_app
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 class _FakeDashboardNode:

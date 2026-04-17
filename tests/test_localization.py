@@ -82,7 +82,8 @@ def test_moving_target_bounded_rmse() -> None:
         config=TOAConfig(step_size=0.18, rho=0.6, max_inner_iters=5),
         seed=3,
     )
-    rng = random.Random(0)
+    _TestRNG = random.Random
+    rng = _TestRNG(0)
     nbrs = _fully_connected(list(sensors))
 
     # Warm-up period: let the estimator converge on a static pose first.

@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 AGGREGATION_HISTORY_JSON = "aggregation_history.json"
 AGGREGATION_HISTORY_CSV = "aggregation_history.csv"

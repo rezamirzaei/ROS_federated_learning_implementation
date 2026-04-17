@@ -21,6 +21,7 @@ from :mod:`fl_robots.mpc` remains the default planner.
 
 from __future__ import annotations
 
+import logging
 import math
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -39,6 +40,7 @@ from .sim_models import (
 
 __all__ = ["OSQP_AVAILABLE", "QPMPCPlanner", "get_qp_planner"]
 
+logger = logging.getLogger(__name__)
 
 ArrayLike = Any
 WarmStartEntry = tuple[ArrayLike, ArrayLike]
@@ -436,7 +438,9 @@ class QPMPCPlanner:
                 self._solver_cache.pop(robot.robot_id, None)
 
         if not cache_matches:
-            assert osqp is not None
+            if osqp is None:
+                msg = "osqp is not installed"
+                raise ImportError(msg)
             solver = osqp.OSQP()
             solver.setup(
                 P=P_csc,
@@ -471,9 +475,11 @@ class QPMPCPlanner:
                     else:
                         prob.warm_start(x=prev_u)
                 except Exception:  # pragma: no cover - defensive
-                    pass
+                    logger.debug("QP warm-start skipped due to shape mismatch")
 
-        assert prob is not None
+        if prob is None:
+            msg = "OSQP problem was not initialised"
+            raise RuntimeError(msg)
         result = prob.solve()
         self.last_iterations[robot.robot_id] = int(getattr(result.info, "iter", 0))
         self.last_status[robot.robot_id] = str(getattr(result.info, "status", "unknown"))

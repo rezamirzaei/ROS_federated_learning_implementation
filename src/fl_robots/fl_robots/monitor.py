@@ -241,26 +241,27 @@ class MonitorNode(Node):
     def print_dashboard(self):
         """Print a real-time dashboard to console."""
         elapsed = time.time() - self.start_time
+        _log = self.get_logger().info
 
-        print("\n" + "=" * 60)
-        print("  FEDERATED LEARNING MONITOR DASHBOARD")
-        print("=" * 60)
-        print(f"  Elapsed Time: {elapsed / 60:.1f} minutes")
-        print(f"  Total Rounds: {self.total_rounds}")
-        print(f"  Total Aggregations: {self.total_aggregations}")
-        print("-" * 60)
+        _log("\n" + "=" * 60)
+        _log("  FEDERATED LEARNING MONITOR DASHBOARD")
+        _log("=" * 60)
+        _log(f"  Elapsed Time: {elapsed / 60:.1f} minutes")
+        _log(f"  Total Rounds: {self.total_rounds}")
+        _log(f"  Total Aggregations: {self.total_aggregations}")
+        _log("-" * 60)
 
         # Coordinator status
         if self.coordinator_status:
-            print(f"  Coordinator State: {self.coordinator_status.get('state', 'UNKNOWN')}")
-            print(
+            _log(f"  Coordinator State: {self.coordinator_status.get('state', 'UNKNOWN')}")
+            _log(
                 f"  Current Round: {self.coordinator_status.get('current_round', 0)}"
                 f"/{self.coordinator_status.get('total_rounds', '?')}"
             )
-            print(f"  Active Robots: {self.coordinator_status.get('active_robots', 0)}")
+            _log(f"  Active Robots: {self.coordinator_status.get('active_robots', 0)}")
 
-        print("-" * 60)
-        print("  ROBOT STATUS:")
+        _log("-" * 60)
+        _log("  ROBOT STATUS:")
 
         # Robot metrics
         for robot_id, metrics in self.robot_metrics.items():
@@ -272,22 +273,22 @@ class MonitorNode(Node):
                     loss = f"{loss:.4f}"
                 if isinstance(acc, float):
                     acc = f"{acc:.1f}%"
-                print(
+                _log(
                     f"    {robot_id}: Loss={loss}, Acc={acc}, "
                     f"Rounds={self.robot_participation[robot_id]}"
                 )
 
-        print("-" * 60)
+        _log("-" * 60)
 
         # Aggregation metrics
         if self.aggregation_metrics:
             latest_agg = self.aggregation_metrics[-1]
-            print(f"  LATEST AGGREGATION (Round {latest_agg.get('round', '?')}):")
-            print(f"    Participants: {latest_agg.get('num_participants', 0)}")
-            print(f"    Total Samples: {latest_agg.get('total_samples', 0)}")
-            print(f"    Mean Divergence: {latest_agg.get('mean_divergence', 0):.4f}")
+            _log(f"  LATEST AGGREGATION (Round {latest_agg.get('round', '?')}):")
+            _log(f"    Participants: {latest_agg.get('num_participants', 0)}")
+            _log(f"    Total Samples: {latest_agg.get('total_samples', 0)}")
+            _log(f"    Mean Divergence: {latest_agg.get('mean_divergence', 0):.4f}")
 
-        print("=" * 60 + "\n")
+        _log("=" * 60 + "\n")
 
     def save_results(self):
         """Save results to files."""
@@ -402,7 +403,7 @@ def main(args=None):
     except KeyboardInterrupt:
         # Generate final report
         report = monitor.generate_final_report()
-        print(report)
+        monitor.get_logger().info(report)
 
         # Save final results
         monitor.save_results()

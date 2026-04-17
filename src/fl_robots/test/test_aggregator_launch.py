@@ -103,7 +103,7 @@ class TestAggregatorLifecycle(unittest.TestCase):
             try:
                 received.append(json.loads(msg.data))
             except Exception:
-                pass
+                pass  # ignore malformed messages in tests
 
         self.node.create_subscription(String, "/fl/aggregation_metrics", _cb, 10)
 

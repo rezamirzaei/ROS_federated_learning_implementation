@@ -136,17 +136,14 @@ class SyntheticDataGenerator:
         if not front_clear:
             if left_clear and (not right_clear or goal_angle > 0):
                 return 1  # Turn left
-            elif right_clear:
+            if right_clear:
                 return 2  # Turn right
-            else:
-                return 3  # Stop
-        else:
-            if abs(goal_angle) < 0.2:
-                return 0  # Forward
-            elif goal_angle > 0:
-                return 1  # Turn left
-            else:
-                return 2  # Turn right
+            return 3  # Stop
+        if abs(goal_angle) < 0.2:
+            return 0  # Forward
+        if goal_angle > 0:
+            return 1  # Turn left
+        return 2  # Turn right
 
 
 class RobotAgentNode(Node):

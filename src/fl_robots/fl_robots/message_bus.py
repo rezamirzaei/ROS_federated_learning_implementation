@@ -45,6 +45,12 @@ class MessageBus:
             except ValueError:
                 return False
 
+    def _safe_dispatch(self, handler: Subscriber, event: BusEvent) -> None:
+        try:
+            handler(event)
+        except Exception:
+            logger.exception("Handler %r raised on topic %s", handler, event.topic)
+
     def publish(self, topic: str, source: str, payload: Mapping[str, Any]) -> BusEvent:
         """Publish an event to *topic*, notifying all matching subscribers and wildcards."""
         event = BusEvent(timestamp=time.time(), topic=topic, source=source, payload=dict(payload))
@@ -55,10 +61,7 @@ class MessageBus:
             )
 
         for handler in subscribers:
-            try:
-                handler(event)
-            except Exception:
-                logger.exception("Handler %r raised on topic %s", handler, topic)
+            self._safe_dispatch(handler, event)
 
         return event
 

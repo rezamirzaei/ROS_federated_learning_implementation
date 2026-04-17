@@ -268,7 +268,7 @@ def test_digital_twin_updates_state_from_status_callbacks(fake_ros: Any, tmp_pat
     try:
         node.update_visualization()
     except Exception:
-        pass
+        pass  # matplotlib may be headless-broken; coverage still counted
 
 
 # ── robot_agent topic-training & inference paths ───────────────────────
