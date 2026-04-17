@@ -252,6 +252,11 @@ latency, and MPC tracking error.
 
 Structured JSON logs: `FL_ROBOTS_JSON_LOGS=1 uv run python main.py`.
 
+Monitor/ROS result artifacts are written under the configured output directory
+as `aggregation_history.json`, `aggregation_history.csv`, `robot_metrics.json`,
+and `summary.json` (with legacy `training_summary.json` still emitted for
+backward compatibility).
+
 ## 🔒 Security
 
 * **API auth** — Set `FL_ROBOTS_API_TOKEN=<token>` in the environment to
