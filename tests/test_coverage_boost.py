@@ -12,6 +12,7 @@ import json
 import logging
 import os
 import tempfile
+import time
 from pathlib import Path
 
 import numpy as np
@@ -156,6 +157,7 @@ def test_monitor_records_registration_and_metrics(fake_ros, tmp_path):
             self.data = d
 
     # Send a registration, a status update, and an aggregation metric.
+    agg_timestamp = time.time()
     fake_ros.publish(
         "/fl/robot_status", _Msg(json.dumps({"type": "registration", "robot_id": "m1"}))
     )
@@ -185,6 +187,7 @@ def test_monitor_records_registration_and_metrics(fake_ros, tmp_path):
                     "mean_divergence": 0.1,
                     "aggregation_time": 0.01,
                     "participant_ids": ["m1", "m2"],
+                    "timestamp": agg_timestamp,
                 }
             )
         ),
@@ -199,6 +202,10 @@ def test_monitor_records_registration_and_metrics(fake_ros, tmp_path):
     assert "aggregation_history.json" in files
     assert "aggregation_history.csv" in files
     assert "summary.json" in files
+    summary = json.loads((Path(tmp_path) / "summary.json").read_text(encoding="utf-8"))
+    assert summary["start_time"] <= summary["end_time"]
+    assert abs(summary["elapsed_time"] - (summary["end_time"] - summary["start_time"])) < 1e-6
+    assert summary["start_time"] <= agg_timestamp <= summary["end_time"]
 
     report = node.generate_final_report()
     assert "Round" in report or "ROUND" in report or "round" in report.lower()
@@ -416,4 +423,3 @@ def test_simple_nn_flat_weights_roundtrip():
     assert flat.shape[0] == expected
     # Count-parameters API returns an int equal to the flat length.
     assert model.count_parameters() == expected
-

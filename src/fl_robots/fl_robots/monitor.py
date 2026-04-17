@@ -291,6 +291,7 @@ class MonitorNode(Node):
 
     def save_results(self):
         """Save results to files."""
+        end_time = time.time()
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
         # Save aggregation history
@@ -306,7 +307,8 @@ class MonitorNode(Node):
         # Save summary
         summary = {
             "start_time": self.start_time,
-            "elapsed_time": time.time() - self.start_time,
+            "end_time": end_time,
+            "elapsed_time": end_time - self.start_time,
             "total_rounds": self.total_rounds,
             "total_aggregations": self.total_aggregations,
             "robots": list(self.robot_metrics.keys()),
