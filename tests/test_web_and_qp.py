@@ -72,7 +72,16 @@ def test_metrics_endpoint_returns_prometheus_text(app_no_token):
     assert rv.status_code == 200
     body = rv.data.decode("utf-8")
     # Prometheus exposition format — HELP + TYPE lines plus values.
-    for metric in ("fl_robot_count", "fl_avg_accuracy", "fl_tick_count", "fl_controller_state"):
+    for metric in (
+        "fl_robot_count",
+        "fl_avg_accuracy",
+        "fl_tick_count",
+        "fl_controller_state",
+        "fl_training_active",
+        "fl_aggregation_divergence",
+        "fl_tracking_error_bucket",
+        "fl_mpc_solve_time_ms_bucket",
+    ):
         assert metric in body, f"missing metric {metric}"
 
 

@@ -15,14 +15,28 @@ from fl_robots.controller import (
 )
 from fl_robots.observability.metrics import (
     REGISTRY,
+    fl_aggregation_divergence,
     fl_avg_accuracy,
+    fl_controller_state,
+    fl_mpc_solve_time_ms,
     fl_robot_count,
+    fl_round_latency_seconds,
+    fl_tracking_error,
+    fl_training_active,
     update_from_snapshot,
 )
 from fl_robots.persistence import MetricsStore
 from fl_robots.results_artifacts import LEGACY_SUMMARY_JSON, SUMMARY_JSON, resolve_summary_path
 
 # ── Controller ───────────────────────────────────────────────────────
+
+
+def _sample_value(metric, sample_name: str) -> float:
+    for family in metric.collect():
+        for sample in family.samples:
+            if sample.name == sample_name and not sample.labels:
+                return float(sample.value)
+    raise AssertionError(f"missing sample {sample_name}")
 
 
 def test_all_valid_commands_pass_validator():
@@ -130,20 +144,46 @@ def test_update_from_snapshot_populates_gauges():
     snapshot = {
         "system": {
             "controller_state": "RUNNING",
+            "training_active": True,
             "robot_count": 4,
-            "tick_count": 42,
-            "current_round": 3,
+            "tick_count": 9000,
+            "current_round": 1000,
         },
         "metrics": {
             "avg_loss": 0.321,
             "avg_accuracy": 77.5,
             "best_accuracy": 90.0,
             "mean_tracking_error": 0.12,
+            "last_aggregation": {"mean_divergence": 0.42},
+        },
+        "history": {
+            "global": [
+                {"round_id": 999, "timestamp": 1000.0},
+                {"round_id": 1000, "timestamp": 1001.5},
+            ]
+        },
+        "mpc": {
+            "system": {"tick": 9000},
+            "per_robot": [
+                {"robot_id": "robot_1", "tracking_error": 0.2, "qp_solve_time_ms": 4.0},
+                {"robot_id": "robot_2", "tracking_error": 0.4, "qp_solve_time_ms": 6.5},
+            ],
         },
     }
+    before_tracking = _sample_value(fl_tracking_error, "fl_tracking_error_count")
+    before_solve = _sample_value(fl_mpc_solve_time_ms, "fl_mpc_solve_time_ms_count")
+    before_latency = _sample_value(fl_round_latency_seconds, "fl_round_latency_seconds_count")
+    update_from_snapshot(snapshot)
     update_from_snapshot(snapshot)
     assert fl_robot_count._value.get() == 4.0  # type: ignore[attr-defined]
     assert abs(fl_avg_accuracy._value.get() - 77.5) < 1e-6  # type: ignore[attr-defined]
+    assert fl_training_active._value.get() == 1.0  # type: ignore[attr-defined]
+    assert fl_aggregation_divergence._value.get() == 0.42  # type: ignore[attr-defined]
+    assert fl_controller_state.labels(state="RUNNING")._value.get() == 1.0  # type: ignore[attr-defined]
+    assert fl_controller_state.labels(state="ERROR")._value.get() == 0.0  # type: ignore[attr-defined]
+    assert _sample_value(fl_tracking_error, "fl_tracking_error_count") - before_tracking == 2.0
+    assert _sample_value(fl_mpc_solve_time_ms, "fl_mpc_solve_time_ms_count") - before_solve == 2.0
+    assert _sample_value(fl_round_latency_seconds, "fl_round_latency_seconds_count") - before_latency == 1.0
 
     # Scrape produces well-formed Prometheus text format.
     from prometheus_client import generate_latest
@@ -151,3 +191,7 @@ def test_update_from_snapshot_populates_gauges():
     text = generate_latest(REGISTRY).decode("utf-8")
     assert "fl_robot_count" in text
     assert "fl_avg_accuracy" in text
+    assert "fl_training_active" in text
+    assert "fl_aggregation_divergence" in text
+    assert "fl_tracking_error_bucket" in text
+    assert "fl_mpc_solve_time_ms_bucket" in text

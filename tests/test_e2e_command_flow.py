@@ -39,9 +39,10 @@ def test_command_lifecycle_and_metrics_scrape():
         metrics = client.get("/metrics")
         assert metrics.status_code == 200
         text = metrics.data.decode("utf-8")
-        # Must expose our own metrics family. Registered metrics use the
-        # ``fl_`` prefix (see observability/metrics.py).
+        # Must expose the standalone FL/MPC metrics used by our alert rules.
         assert "fl_robot_count" in text
+        assert "fl_training_active" in text
+        assert "fl_tracking_error_bucket" in text
         # Prometheus exposition format starts with a HELP line.
         assert re.search(r"^# HELP ", text, re.MULTILINE)
 

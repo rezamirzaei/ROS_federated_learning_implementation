@@ -4,39 +4,36 @@
 
 ## TL;DR
 
-This is a **well-above-average research/teaching repo** with a coherent dual-mode design, real property-based tests, a regression-gated benchmark, release provenance, SBOM, hardened k8s manifests, and an opt-in OTEL path. It is **not** production-grade: the FL math has a real correctness smell (BatchNorm running stats are weighted by sample count in `federated_averaging`), reproducibility has holes (no global torch/cudnn determinism; `SyntheticDataGenerator` uses `hash(robot_id)` which is randomized), the OSQP planner rebuilds `osqp.OSQP()` every tick defeating much of the warm-start, there are **no container CVE scans / SAST / CodeQL / mutation testing / NetworkPolicy / Helm chart / ADRs**, and mypy runs in a **relaxed, opt-in-strictness mode**.
+This is a **well-above-average research/teaching repo** with a coherent dual-mode design, ADR-backed architecture notes, real property-based tests, a regression-gated benchmark, locked CI installs, stronger operator docs, release provenance, SBOM, hardened k8s manifests, and an opt-in OTEL path. It is **not** production-grade: the FL math still has a real correctness smell (BatchNorm running stats are weighted by sample count in `federated_averaging`), the OSQP planner still rebuilds `osqp.OSQP()` every tick defeating much of the warm-start, mypy remains in a **relaxed, opt-in-strictness mode**, and important security/ops gaps remain (**no container CVE scans / SAST / CodeQL / mutation testing / NetworkPolicy / Helm chart**, CSP still allows `'unsafe-inline'`, no CSRF).
 
 ### Aggregate score (unweighted mean across 14 sections)
 
-`(9 + 6.5 + 7 + 6 + 8 + 7 + 7 + 7 + 6.5 + 8 + 7.5 + 8.5 + 8 + 5.5) / 14 ≈ **7.3 / 10**`
+`(9.5 + 7 + 7 + 6.5 + 8 + 7 + 8 + 7.5 + 6.5 + 8.5 + 7.5 + 9.2 + 8.5 + 6.5) / 14 ≈ **7.7 / 10**`
 
-**Overall characterisation.** A polished demo-grade system with genuine engineering effort (property tests, regression gates, lifecycle nodes, SBOM, k8s hardening). Blocked from production-grade primarily by a **correctness bug in FedAvg BN handling**, **reproducibility gaps** (hash-seed, no torch determinism), **an OSQP anti-pattern** that negates most of the warm-start claim, and **missing security hygiene** (image scan, CodeQL, CSRF, CSP `unsafe-inline`, non-constant-time auth). The Top-5 P0 items below are each < 1 day and together would lift the scorecard meaningfully.
+**Overall characterisation.** A polished demo-grade system with genuine engineering effort (property tests, regression gates, lifecycle nodes, ADRs, runbook/observability docs, SBOM, k8s hardening). Blocked from production-grade primarily by a **correctness bug in FedAvg BN handling**, **an OSQP anti-pattern** that negates most of the warm-start claim, **remaining security hygiene gaps** (image scan, CodeQL, CSRF, CSP `unsafe-inline`), and **typing/CI rigor** that is still intentionally softer than a production service.
 
 ---
 
 ## 1. Section-by-section scorecard
 
-### 1.1 Architecture & design — **9 / 10**
+### 1.1 Architecture & design — **9.5 / 10**
 
-**Evidence.** `docs/ARCHITECTURE.md` L1–71 cleanly documents the dual-mode pattern; `fl_robots/ros_compat.py` (imported at `aggregator.py:35–46`, `robot_agent.py:40–55`) is the single seam between ROS and stub modes; `message_bus.MessageBus` mirrors ROS topic semantics in-process; planners are swappable behind a `solve(robots, leader_position)` shape (`CONTRIBUTING.md:49–54`); persistence is a thin stdlib SQLite wrapper (`persistence.py:1–60`).
+**Evidence.** `docs/ARCHITECTURE.md` now carries Mermaid context/container diagrams alongside the dual-mode explanation; `docs/adr/0001-dual-mode-ros-shim.md` through `0004-lifecycle-vs-node.md` record the main design choices; `fl_robots/ros_compat.py` is still the single seam between ROS and stub modes; `message_bus.MessageBus` mirrors ROS topic semantics in-process; planners remain swappable behind a common solve shape; persistence is still a thin stdlib SQLite wrapper.
 
-**Why not 10.** No Architecture Decision Records (ADRs); the "standalone vs ROS" split, the JSON-over-`std_msgs/String` fallback protocol, and the optional custom-interfaces migration are undocumented design choices that will bite a new maintainer. The `coordinator`/`digital_twin`/`monitor` modules are typed-out of mypy (`pyproject.toml:241-252` `ignore_errors = true`), suggesting design debt.
+**Why not 10.** The key design decisions are now documented, but the `coordinator`/`digital_twin`/`monitor` modules are still typed-out of mypy (`pyproject.toml` `ignore_errors = true`), which signals unresolved design debt in first-party code.
 
 **To reach 10**
-- Create `docs/adr/0001-dual-mode-ros-shim.md`, `0002-json-string-fallback-protocol.md`, `0003-planner-pluggability.md`, `0004-lifecycle-vs-node.md` (each ≤ 1 page, MADR template).
-- Add a C4 context + container diagram to `docs/ARCHITECTURE.md` (Mermaid is already enabled via pymdownx.superfences).
 - Fold `coordinator.py` / `digital_twin.py` / `monitor.py` out of `tool.mypy.overrides.ignore_errors = true` — they are in-house code, not third-party.
 
 ---
 
-### 1.2 Code quality & typing — **6.5 / 10**
+### 1.2 Code quality & typing — **7 / 10**
 
-**Evidence.** `pyproject.toml:131–164` runs a sensible ruff ruleset (E/W/F/I/B/UP/C4/SIM/RUF). Pre-commit is wired (`.pre-commit-config.yaml`). But mypy is deliberately lax: `disallow_untyped_defs = false`, `disallow_incomplete_defs = false`, `warn_unused_ignores = false` (`pyproject.toml:211–216`); six first-party modules carry `ignore_errors = true` (L241–252); pyright is "advisory" (`ci.yml:45–55` `continue-on-error: true`). Per-file F401 waivers on five first-party modules (`pyproject.toml:168–172`). `[tool.black]` is declared (`:126–129`) but unused — ruff-format owns formatting; this is dead config. Inline `# type: ignore[misc,valid-type]` on `class AggregatorNode(BaseNode):` (`aggregator.py:84`) is appropriate.
+**Evidence.** `pyproject.toml` runs a sensible ruff ruleset (E/W/F/I/B/UP/C4/SIM/RUF). Pre-commit is wired. Dead `[tool.black]` config is gone and Dependabot no longer tracks Black while ruff-format owns formatting. But mypy is still deliberately lax: `disallow_untyped_defs = false`, `disallow_incomplete_defs = false`, `warn_unused_ignores = false`; several first-party modules still carry `ignore_errors = true`; pyright remains "advisory" in CI. Inline `# type: ignore[misc,valid-type]` on `class AggregatorNode(BaseNode):` is still appropriate.
 
 **To reach 10**
 - Flip `disallow_untyped_defs = true` and `disallow_incomplete_defs = true` in `pyproject.toml` (L213-214); fix resulting errors module-by-module.
 - Remove `ignore_errors = true` from `fl_robots.coordinator`, `fl_robots.digital_twin`, `fl_robots.monitor`, `fl_robots.observability.logging`, `fl_robots.web_dashboard` (`pyproject.toml:241-252`) — add real type annotations.
-- Drop `[tool.black]` block (`pyproject.toml:126–129`) and the `black` line from `.github/dependabot.yml:36`.
 - Drop `continue-on-error: true` from the pyright job (`.github/workflows/ci.yml:48`) once it's green.
 - Add `ANN`, `TCH`, `PL`, `N`, `A`, `ARG`, `PTH` to the ruff select list.
 - Eliminate the per-file `F401` waivers on `aggregator.py`, `robot_agent.py`, `web_dashboard.py`, `mpc_qp.py` (`pyproject.toml:167–172`) by moving the optional-dep soft-imports inside `TYPE_CHECKING` blocks or using `importlib`.
@@ -60,23 +57,20 @@ This is a **well-above-average research/teaching repo** with a coherent dual-mod
 
 ---
 
-### 1.4 ML correctness (FedAvg / FedProx / non-IID / reproducibility) — **6 / 10**
+### 1.4 ML correctness (FedAvg / FedProx / non-IID / reproducibility) — **6.5 / 10**
 
-**Evidence of correctness.** Weighted FedAvg with sample counts is correct in the benchmark path (`scripts/benchmark.py:200-211` uses `torch.stack` + per-client weights). FedProx proximal penalty is applied only to `named_parameters()` (not buffers) — `scripts/benchmark.py:174-178`, correct. Runtime FedProx wiring in `aggregator.py:638-649` and `robot_agent.py:623-633` looks consistent. Multi-seed sweep is real (`benchmark.py:311-323`). Dirichlet non-IID shards implemented (`data/` module, seeded).
+**Evidence of correctness.** Weighted FedAvg with sample counts is correct in the benchmark path. FedProx proximal penalty is applied only to `named_parameters()` (not buffers), and the runtime client path now fails loudly on missing or shape-mismatched FedProx snapshots instead of silently degrading. `SyntheticDataGenerator` no longer relies on randomized `hash(robot_id)` seeding; deterministic seeding is threaded from an explicit seed parameter via `fl_robots/utils/determinism.py`, and `scripts/benchmark.py` uses the same helper. Multi-seed sweep is real. Dirichlet non-IID shards remain implemented and seeded.
 
 **Real defects.**
 1. **FedAvg over full `state_dict` includes BatchNorm running stats weighted by sample counts** (`models/simple_nn.py:255-266` + `aggregator.py:636` `{name: arr.tolist() for name, arr in self.global_weights.items()}`). `SimpleNavigationNet` has three `BatchNorm1d` layers (`simple_nn.py:43,47,51`) whose `running_mean` / `running_var` / `num_batches_tracked` flow through `federated_averaging` via `get_weights()` (`simple_nn.py:107-117`). Weighted-averaging BN buffers by sample count produces biased statistics; canonical fixes are per-client BN (FedBN) or averaging parameters only. This is a **genuine ML bug**, not a style point.
-2. **`SyntheticDataGenerator` seed uses `hash(robot_id) % 10000`** (`robot_agent.py:77`). Python's `hash()` is randomised unless `PYTHONHASHSEED` is pinned → different "seeds" every process start ⇒ non-reproducible non-IID splits across runs in ROS mode.
-3. **No global determinism knobs.** `grep torch.manual_seed` only hits `scripts/benchmark.py:216`. Missing: `torch.use_deterministic_algorithms(True)`, `torch.backends.cudnn.deterministic = True`, `numpy.random.default_rng(seed)` plumbing into the simulation. `docs/SLO.md:30-32` acknowledges "wheel-level non-determinism" but does not address `cudnn.benchmark` or `DataLoader` worker seeds (though DataLoader is not used in the benchmark path).
-4. **`num_batches_tracked` is an `int64` buffer** — the dtype promotion in `federated_averaging` (`simple_nn.py:256`) does keep `np.float32` promoted, but then written back to an int64 tensor via `set_weights`' `.to(dtype=state_dict[name].dtype)` (`simple_nn.py:129-131`) → silent truncation of the weighted fractional count.
+2. **BatchNorm buffer handling still makes reproducibility/correctness worse than it should be.** `num_batches_tracked` is an `int64` buffer — the dtype promotion in `federated_averaging` keeps `np.float32` promoted, but then writes back to an int64 tensor via `set_weights(...to(dtype=...))` → silent truncation of the weighted fractional count.
+3. **Determinism is improved but not yet documented as a strong contract.** `seed_everything` now sets Python/NumPy/Torch determinism knobs from the main entry points, but the repo still lacks a crisp reproducibility contract/checksum in `docs/BENCHMARKS.md`.
 
 **Further.** `compute_gradient_divergence` is an L2 distance, not a gradient at all (`simple_nn.py:269-292`); the naming misleads readers. No FedAdam / FedAvgM / scaffold implementations. No client selection (`min_robots`, `participation_threshold`) beyond trivial thresholds. No differential-privacy noising.
 
 **To reach 10**
 - Exclude BN buffers from weighted averaging in `models/simple_nn.py:federated_averaging` — either parameter-only averaging or FedBN (keep BN local). Update `aggregator.py:143-144`/`634-656` accordingly.
 - Rename `compute_gradient_divergence` → `compute_weight_l2_drift` (or reimplement it against actual gradients).
-- Make `SyntheticDataGenerator.__init__` require an explicit seed and thread it from the ROS param `seed` (add a `seed` parameter in `robot_agent._declare_parameters`). Fix `robot_agent.py:77` to not rely on `hash()`.
-- Add `fl_robots/utils/determinism.py` with `seed_everything(seed)` that sets `random`, `numpy`, `torch`, `torch.cuda`, `torch.backends.cudnn.deterministic/benchmark`, `PYTHONHASHSEED`, and call it from `scripts/benchmark.py:run_benchmark` (before L216) and from `robot_agent.__init__`.
 - Add FedProx correctness tests for BN-exclusion invariance.
 - Add a `FedAdam` / server-side momentum variant to `models/simple_nn.py`; wire via the `algorithm` parameter at `aggregator.py:276`.
 - Document reproducibility guarantees in `docs/BENCHMARKS.md` with a reproducible run checksum.
@@ -118,46 +112,41 @@ This is a **well-above-average research/teaching repo** with a coherent dual-mod
 
 ---
 
-### 1.7 Observability — **7 / 10**
+### 1.7 Observability — **8 / 10**
 
-**Evidence.** Dedicated `CollectorRegistry` avoids global bleed (`observability/metrics.py:31`). 8 metrics incl. `fl_round_latency_seconds` histogram (`:80-85`). `update_from_snapshot` is idempotent (`:110-136`). OTEL opt-in helper (`observability/tracing.py`). Structlog logging module. Prometheus rules + Grafana dashboard in `docs/`. `ServiceMonitor` + `PrometheusRule` in `deploy/k8s/standalone.yaml:144-187`. `/api/ready` readiness uses tick staleness (`standalone_web.py:_READY_STALE_S`, probe wired at `standalone.yaml:79-86`).
+**Evidence.** Dedicated `CollectorRegistry` avoids global bleed. `update_from_snapshot` now exports the documented standalone FL/MPC contract, including `fl_training_active`, `fl_aggregation_divergence`, `fl_tracking_error`, `fl_mpc_solve_time_ms`, and round-latency observations derived from real aggregation history with scrape-safe deduplication. OTEL remains opt-in. Structlog logging module exists. `docs/OBSERVABILITY.md`, `docs/RUNBOOK.md`, `docs/prometheus-rules.yml`, and `deploy/k8s/standalone.yaml` now point at the same live `fl_*` metric family. `/api/ready` still uses tick staleness.
 
-**Gaps.** No histogram for `/api/*` endpoint latency; no Counter for HTTP requests/status codes; no `fl_mpc_solve_time_seconds` histogram (only a gauge-via-snapshot). No exemplars linking traces ↔ metrics. No log correlation ID injected into spans. Alert rules are minimal (`standalone.yaml:178-187` is just `up == 0` for 2 m). Only one OTEL span wired (`/api/command` per CHANGELOG) — aggregation, QP solve, local training are not instrumented. No RED / USE dashboards; `grafana-dashboard.json` exists but unvetted.
+**Gaps.** No histogram for `/api/*` endpoint latency; no Counter for HTTP requests/status codes. No exemplars linking traces ↔ metrics. No log correlation ID injected into spans. OTEL instrumentation is still thin (`/api/command` only) — aggregation, QP solve, and local training are not instrumented. `grafana-dashboard.json` still does not cover RED / USE style API views.
 
 **To reach 10**
-- Add `fl_http_request_duration_seconds{path,method,status}` Histogram and `fl_http_requests_total` Counter; record in an `after_request` hook in `standalone_web.py:392`.
-- Add `fl_mpc_solve_time_seconds{robot_id}` Histogram (per-robot) and `fl_fedavg_aggregation_duration_seconds` Histogram; update in `mpc_qp.py:194` and `aggregator.py:574-576`.
+- Add `fl_http_request_duration_seconds{path,method,status}` Histogram and `fl_http_requests_total` Counter; record in an `after_request` hook in `standalone_web.py`.
+- Add a dedicated `fl_fedavg_aggregation_duration_seconds` Histogram on the real aggregation path, not just the standalone snapshot bridge.
 - Wrap `_perform_aggregation` (`aggregator.py:531`) and `_plan_robot` (`mpc_qp.py:238`) with `span(...)` context.
 - Add exemplars (`prometheus_client` exemplar support) linking histogram samples to trace IDs.
-- Expand `docs/prometheus-rules.yml` with: FL round stall, divergence spike, p95 latency SLO burn-rate multi-window alerts (2 %/1 h, 5 %/6 h).
 - Add a `request_id` → `correlation_id` structlog bind in `standalone_web.py`.
 
 ---
 
-### 1.8 Security — **7 / 10**
+### 1.8 Security — **7.5 / 10**
 
-**Evidence.** Non-root container users UID 1000 (`docker/Dockerfile:23-26, 114-119`). k8s hardening is strong: `runAsNonRoot`, `readOnlyRootFilesystem`, `seccompProfile: RuntimeDefault`, `capabilities.drop: ALL`, `automountServiceAccountToken: false` (`standalone.yaml:60-66, 109-113`). Security headers on every response (`standalone_web.py:379-403`: CSP, X-Frame, X-Content-Type, Referrer, Permissions-Policy). Bearer-token auth with constant-string compare (`standalone_web.py:319-328`) — note this is **not constant-time** (`token.strip() != expected`). Sliding-window rate limiter per-IP (`:331-355`). `gitleaks` pre-commit + dependabot for pip/actions/docker. SBOM + provenance attestations in release workflow (`release.yml:30-39, 107-113`). PyPI Trusted Publishing (`release.yml:45-63`).
+**Evidence.** Non-root container users UID 1000. k8s hardening is strong: `runAsNonRoot`, `readOnlyRootFilesystem`, `seccompProfile: RuntimeDefault`, `capabilities.drop: ALL`, `automountServiceAccountToken: false`. Security headers are applied to every response. Bearer-token auth now uses `hmac.compare_digest`, which closes the earlier timing-attack footgun. Sliding-window rate limiter per-IP remains. `gitleaks` pre-commit + Dependabot for pip/actions/docker remain in place. Release workflow still emits SBOM + provenance attestations and uses PyPI Trusted Publishing.
 
 **Gaps.**
 1. **CSP still includes `'unsafe-inline'` for scripts and styles** (`standalone_web.py:381-382`) — weakest CSP rung; `deploy/k8s/standalone.yaml:26-28` even documents that the bundled JS has inline handlers.
-2. **Bearer compare is not `hmac.compare_digest`** (`standalone_web.py:326`) — timing-attack viable on small tokens.
-3. **No CSRF** token on `POST /api/command` (only Bearer or nothing if unset). If Bearer is *not* set (default dev mode), any page can issue cross-origin POSTs; the CSP `form-action 'self'` does nothing for `fetch()`.
-4. **No container image scanning** (`trivy` / `grype`) in CI or release workflows.
-5. **No CodeQL / `bandit` SAST** job.
-6. **No NetworkPolicy** in `deploy/k8s/` — pod can egress anywhere.
-7. **No `--mount=type=cache` / pinned `apt` versions** in `docker/Dockerfile:47-56, 78-88` (reproducibility + CVE drift).
-8. **DDS security (`sros2`) not configured** (acknowledged in `docs/SECURITY.md:26-28` but no migration plan).
-9. `uv.lock` is checked in but CI uses `uv sync --extra …` without `--locked` — lock drift is not enforced.
+2. **No CSRF** token on `POST /api/command` (only Bearer or nothing if unset). If Bearer is *not* set (default dev mode), any page can issue cross-origin POSTs; the CSP `form-action 'self'` does nothing for `fetch()`.
+3. **No container image scanning** (`trivy` / `grype`) in CI or release workflows.
+4. **No CodeQL / `bandit` SAST** job.
+5. **No NetworkPolicy** in `deploy/k8s/` — pod can egress anywhere.
+6. **No `--mount=type=cache` / pinned `apt` versions** in `docker/Dockerfile` (reproducibility + CVE drift).
+7. **DDS security (`sros2`) not configured** (acknowledged in `docs/SECURITY.md` but no migration plan).
 
 **To reach 10**
 - Inline-free JS/CSS refactor of `src/fl_robots/fl_robots/web/templates/standalone.html` + tighten CSP to `script-src 'self'; style-src 'self'` in `standalone_web.py:381-382`.
-- Swap `token.strip() != expected` → `hmac.compare_digest(token.strip().encode(), expected.encode())` (`standalone_web.py:326`).
 - Add CSRF protection via a double-submit cookie on `POST /api/command` and `/api/history/**` mutating calls.
 - Add Trivy image scan and `actions/dependency-review-action` to `.github/workflows/ci.yml`; add `github/codeql-action` workflow.
 - Add a `bandit` pre-commit hook targeting `src/`.
 - Add a `NetworkPolicy` in `deploy/k8s/` restricting egress to Prometheus + DNS + nothing else.
 - Pin apt packages in `docker/Dockerfile:47-56` (`pkg=version`) or switch to `chainguard/python` / `gcr.io/distroless/python3` base; drop to distroless for `standalone-runtime`.
-- Add `--locked` to every `uv sync` in `.github/workflows/*.yml`.
 - Stage an `sros2`-enabled launch profile documented in `docs/SECURITY.md`.
 
 ---
@@ -185,18 +174,17 @@ This is a **well-above-average research/teaching repo** with a coherent dual-mod
 
 ---
 
-### 1.10 DevOps / CI-CD — **8 / 10**
+### 1.10 DevOps / CI-CD — **8.5 / 10**
 
-**Evidence.** Concurrency + cancel-in-progress (`ci.yml:13-15`). pre-commit job (`:18-26`). Lint + mypy + pyright-advisory (`:28-55`). 4-version matrix with GHA cache via `astral-sh/setup-uv@v3` (`:60-86`). Docker build + in-container pytest (`:89-118`). ROS workspace build + import smoke (`:120-143`). Nightly `launch_testing` (`:145-170`). Benchmark regression gate with checked-in baseline (`:172-193`). Release workflow with SBOM + provenance + GHCR multi-arch + PyPI Trusted Publishing (`release.yml`). Dependabot for pip/actions/docker (`.github/dependabot.yml`).
+**Evidence.** Concurrency + cancel-in-progress. pre-commit job. Lint + mypy + pyright-advisory. 4-version matrix with GHA cache via `astral-sh/setup-uv@v3`. Docker build + in-container pytest. ROS workspace build + import smoke. Nightly `launch_testing`. Benchmark regression gate with checked-in baseline. Release workflow with SBOM + provenance + GHCR multi-arch + PyPI Trusted Publishing. Dependabot for pip/actions/docker. CI now uses `uv sync --locked`, so `uv.lock` drift is enforced in the main workflows.
 
-**Gaps.** No image-scan job (Trivy/Grype). No CodeQL. No `actions/cache` beyond `setup-uv` caching. No matrix on OS (only ubuntu-latest) — macOS ARM64 path (where `osqp` builds are fragile, per `docs/DEVELOPMENT.md:59-66`) is untested. `ci.yml:169` uses `|| true` for nightly tests. No automatic version bump / release notes generator (`release-please` / `release-drafter`). No `pre-commit.ci`. No stale-bot. No CLA. No branch-protection-as-code (settings-as-code via `probot/settings`). `uv.lock` is not enforced (no `--locked` flag).
+**Gaps.** No image-scan job (Trivy/Grype). No CodeQL. No `actions/cache` beyond `setup-uv` caching. No matrix on OS (only ubuntu-latest) — macOS ARM64 path (where `osqp` builds are fragile, per `docs/DEVELOPMENT.md`) is untested. `ci.yml:169` still uses `|| true` for nightly tests. No automatic version bump / release notes generator (`release-please` / `release-drafter`). No `pre-commit.ci`. No stale-bot. No CLA. No branch-protection-as-code (settings-as-code via `probot/settings`).
 
 **To reach 10**
 - Add `aquasecurity/trivy-action` and `github/codeql-action` jobs to `.github/workflows/ci.yml`.
 - Add `macos-14` (ARM64) to the `standalone-tests` matrix (`ci.yml:62-63`) to catch `osqp` wheel drift.
 - Remove `|| true` at `ci.yml:169`.
 - Add `release-drafter.yml` for auto-generated release notes (currently `release.yml:130` relies on `generate_release_notes: true`, which is fine but has no changelog sections).
-- Add `--locked` to every `uv sync` invocation.
 - Add `settings-as-code` (`.github/settings.yml`) with required checks.
 - Add `pre-commit.ci` config for auto-update PRs.
 
@@ -204,7 +192,7 @@ This is a **well-above-average research/teaching repo** with a coherent dual-mod
 
 ### 1.11 Deployment — **7.5 / 10**
 
-**Evidence.** Multi-stage Dockerfile with distinct `standalone-runtime`, `standalone-test`, `ros-builder`, `ros-runtime` targets (`docker/Dockerfile`). k8s manifests have Namespace, ConfigMap, Deployment (rolling update, 0 unavailable), Service, ServiceMonitor, PrometheusRule, PodDisruptionBudget. Probes: startup + readiness + liveness with sensible thresholds (`standalone.yaml:79-101`). Compose has health checks per service.
+**Evidence.** Multi-stage Dockerfile with distinct `standalone-runtime`, `standalone-test`, `ros-builder`, `ros-runtime` targets. k8s manifests have Namespace, ConfigMap, Deployment (rolling update, 0 unavailable), Service, ServiceMonitor, PrometheusRule, PodDisruptionBudget. Probes: startup + readiness + liveness with sensible thresholds. Compose has health checks per service. The embedded `PrometheusRule` now mirrors the richer operator docs/rule set instead of drifting behind them.
 
 **Gaps.**
 1. **No Helm chart / Kustomize overlays** — only a single concatenated YAML, hostile to env-specific tuning.
@@ -229,63 +217,55 @@ This is a **well-above-average research/teaching repo** with a coherent dual-mod
 
 ---
 
-### 1.12 Documentation — **8.5 / 10**
+### 1.12 Documentation — **9.2 / 10**
 
-**Evidence.** `docs/ARCHITECTURE.md` (273 lines, topics/services/actions table), `docs/BENCHMARKS.md` with reproducible command + headline table, `docs/SECURITY.md`, `docs/SLO.md`, `docs/DEVELOPMENT.md` with real troubleshooting (macOS port 5000, Apple Silicon osqp), `docs/prometheus-rules.yml`, Grafana dashboard JSON, MkDocs-Material + mkdocstrings API reference auto-deploying to GitHub Pages (`docs.yml`). OpenAPI 3.1 schema served at runtime (`standalone_web.py:OPENAPI_SCHEMA`).
+**Evidence.** `docs/ARCHITECTURE.md` now includes Mermaid diagrams; `docs/adr/0001`–`0004` record the major design choices; `docs/RUNBOOK.md` and `docs/OBSERVABILITY.md` give operators concrete playbooks and metric→alert mappings; `docs/BENCHMARKS.md`, `docs/SECURITY.md`, `docs/SLO.md`, and `docs/DEVELOPMENT.md` remain substantive; `docs/prometheus-rules.yml` and the Grafana dashboard are wired into the docs set; OpenAPI 3.1 is still served at runtime.
 
-**Gaps.** No ADRs (see §1.1). No runbook for incident response (e.g., "aggregation stalled at round N, do X"). No data-flow diagram as Mermaid (only ASCII art `ARCHITECTURE.md:7-23`). No migration guide for `fl_robots_interfaces` consumers. `docs/api/` references 6 pages but no observability runbook. No CHANGELOG entry for the reported `v1.0.0` release's **breaking** items (there are none listed). Typo/inconsistency: CHANGELOG says `scripts/benchmark.py` was removed from coverage omit but `pyproject.toml:103-112` still omits it.
+**Gaps.** No migration guide for `fl_robots_interfaces` consumers. No dedicated profiling guide/flamegraph doc. `docs/api/` is still more reference-heavy than operator-heavy. The changelog still relies on curated prose rather than a structured release-note taxonomy.
 
 **To reach 10**
-- Add `docs/adr/` (4-6 ADRs).
-- Add `docs/RUNBOOK.md` with playbooks for: aggregation stalled, readiness flapping, memory creep, OSQP infeasibility spike.
-- Convert the ASCII diagram in `ARCHITECTURE.md:7-23` to Mermaid; add C4 container diagram.
-- Fix the `pyproject.toml:103-112` / CHANGELOG inconsistency.
-- Add `docs/OBSERVABILITY.md` mapping each metric → alert → runbook.
+- Add a migration guide for `fl_robots_interfaces` consumers.
+- Add `docs/PROFILING.md` with py-spy/scalene recipes and a flamegraph asset.
+- Add explicit reproducibility/checksum notes to `docs/BENCHMARKS.md`.
 
 ---
 
-### 1.13 Developer experience — **8 / 10**
+### 1.13 Developer experience — **8.5 / 10**
 
-**Evidence.** `uv` as the single tool (`pyproject.toml`, `docs/DEVELOPMENT.md:7-21`). `pre-commit` config with ruff + gitleaks + standard hooks. `run.sh` shell wrapper for compose ops. Comprehensive optional-dep groups (`pyproject.toml:41-85`). `pytest-xdist` in `dev` per CHANGELOG. `mkdocs serve`-able. CONTRIBUTING.md is short and actionable.
+**Evidence.** `uv` is still the single tool. `pre-commit` config has the core Python/security hooks. `run.sh` remains the compose wrapper. Comprehensive optional-dep groups exist. `mkdocs serve` is straightforward. A root `Makefile` now gives contributors discoverable `install`/`lint`/`fmt`/`typecheck`/`test`/`bench`/`docs` shortcuts, and `CONTRIBUTING.md` documents them.
 
 **Gaps.**
-1. **No `Makefile` / `justfile` / `tox.ini`** — every onboarding dev retypes `uv run ruff check . && uv run ruff format --check . && uv run mypy … && uv run pytest`.
-2. **No devcontainer** (`.devcontainer/devcontainer.json`) despite a Docker-first deployment story.
-3. `.pre-commit-config.yaml` missing: `mypy`, `pyupgrade`, `actionlint`, `shellcheck` (for `run.sh`/`docker/ros_entrypoint.sh`), `hadolint` (Dockerfile), `check-jsonschema`.
-4. `run.sh` is 282 lines of shell with no `shellcheck` in CI.
-5. No `uv run dev` script wrapper; users must memorise extras.
-6. CODEOWNERS exists (not read but listed) — content unverified.
-7. PR template exists but issue templates content not verified.
+1. **No devcontainer** (`.devcontainer/devcontainer.json`) despite a Docker-first deployment story.
+2. `.pre-commit-config.yaml` is still missing `mypy`, `actionlint`, `shellcheck`, `hadolint`, and `check-jsonschema`.
+3. `run.sh` is still a large shell surface with no `shellcheck` in CI.
+4. No `uv run dev` script wrapper; users still need to remember extras/entrypoints.
+5. CODEOWNERS exists but its content/coverage was not re-audited here.
+6. PR template exists but issue templates content remains unverified.
 
 **To reach 10**
-- Add `Makefile` (or `justfile`) with `install`, `lint`, `fmt`, `typecheck`, `test`, `bench`, `docs`, `image`, `k8s` targets.
 - Add `.devcontainer/devcontainer.json` building from `docker/Dockerfile` target `standalone-test`.
 - Extend `.pre-commit-config.yaml` with `hadolint`, `actionlint`, `shellcheck`, `pyupgrade`, `yamllint`, `check-jsonschema` (for the OpenAPI schema in `standalone_web.py`).
 - Add a `shellcheck` CI job over `run.sh` and `docker/ros_entrypoint.sh`.
-- Document `make <target>` shortcuts in `CONTRIBUTING.md:20-25`.
 
 ---
 
-### 1.14 Reproducibility & data management — **5.5 / 10**
+### 1.14 Reproducibility & data management — **6.5 / 10**
 
-**Evidence.** Seeded MNIST Dirichlet partition (`scripts/benchmark.py:221-228`). Multi-seed sweep (`:311-323`). Checked-in baselines under `results/`. Benchmark regression gate (`ci.yml:184-188`). SBOM + provenance on release. `uv.lock` committed.
+**Evidence.** Seeded MNIST Dirichlet partition remains in place. Multi-seed sweep remains. Checked-in baselines under `results/`. Benchmark regression gate is still real. SBOM + provenance on release. `uv.lock` is committed and CI now installs with `uv sync --locked`. `fl_robots/utils/determinism.py` centralizes Python/NumPy/Torch seeding, and both the benchmark path and `robot_agent` use it.
 
 **Gaps.**
 1. **No model registry** — trained models under `models/` are untracked; no MLflow / DVC / W&B integration; no model card.
 2. **No dataset versioning** — `data/MNIST/raw/` is bound by `torchvision.datasets.MNIST` defaults; no content hash, no DVC remote, `.dockerignore` even removes the raw bytes (per CHANGELOG:54) making reproducible container builds rely on network fetch.
-3. Python hash seed non-determinism (§1.4 #2).
-4. `torch` deterministic flags never set (§1.4 #3).
-5. No **`env-info.json`** artefact uploaded with each benchmark (wheel versions, CPU model, BLAS backend). Current `BenchmarkConfig` (`scripts/benchmark.py:30-47`) stores the config but not the environment.
-6. No run ledger — baselines are just files in `results/` without provenance metadata.
-7. `uv sync` in CI doesn't use `--locked` (uv.lock drift not enforced — §1.10).
+3. No **`env-info.json`** artefact uploaded with each benchmark (wheel versions, CPU model, BLAS backend). Current `BenchmarkConfig` stores the config but not the environment.
+4. No run ledger — baselines are still plain files in `results/` without richer provenance metadata.
+5. Reproducibility is improved in code but still under-documented as an operator/research contract.
 
 **To reach 10**
 - Add DVC or `datasets` lockfile under `data/` with remote URL + content hash; wire into `docker/Dockerfile` as a build-time `--mount=type=secret` fetch or bake into a base image.
 - Add a `models/registry.json` with `{name, version, sha256, training_config, metrics}` written by `scripts/benchmark.py`.
 - Emit an `env_info.json` per benchmark run capturing `platform.platform()`, `torch.__version__`, `numpy.__version__`, CPU info, BLAS.
-- Add `fl_robots/utils/determinism.py:seed_everything` and call it from every entry point (see §1.4).
 - Add a `docs/MODEL_CARD.md` template.
-- Add `--locked` to `uv sync` invocations in CI/release.
+- Add a reproducibility/checksum section to `docs/BENCHMARKS.md`.
 - Consider MLflow integration for per-run tracking with a local file backend.
 
 ---
@@ -295,20 +275,20 @@ This is a **well-above-average research/teaching repo** with a coherent dual-mod
 | # | Priority | Item | Section | Est. effort |
 |---|:-:|---|:-:|:-:|
 | 1 | **P0** | Fix FedAvg BN-buffer weighted-average bug; parameter-only averaging + tests | 1.4 | 0.5 d |
-| 2 | **P0** | Add `seed_everything` (torch/cudnn/numpy/python/`PYTHONHASHSEED`); replace `hash(robot_id)` seed in `robot_agent.py:77` | 1.4, 1.14 | 0.5 d |
-| 3 | **P0** | Cache `osqp.OSQP()` per robot in `mpc_qp.py`; use `.update()` + `warm_start` instead of rebuild each tick | 1.6, 1.9 | 0.75 d |
-| 4 | **P0** | Use `hmac.compare_digest` for bearer-token check in `standalone_web.py:326`; tighten CSP by removing `'unsafe-inline'` | 1.8 | 0.5 d |
-| 5 | **P0** | Add Trivy image scan + CodeQL + Bandit to `.github/workflows/ci.yml` | 1.8, 1.10 | 0.5 d |
-| 6 | **P1** | Enforce `uv sync --locked` in all CI/release workflows | 1.10, 1.14 | 0.1 d |
+| 2 | **P0** | Cache `osqp.OSQP()` per robot in `mpc_qp.py`; use `.update()` + `warm_start` instead of rebuild each tick | 1.6, 1.9 | 0.75 d |
+| 3 | **P0** | Tighten CSP by removing `'unsafe-inline'` and add CSRF protection for `/api/command` | 1.8 | 0.75 d |
+| 4 | **P0** | Add Trivy image scan + CodeQL + Bandit to `.github/workflows/ci.yml` | 1.8, 1.10 | 0.5 d |
+| 5 | **P0** | Remove `|| true` from nightly ROS launch tests and expand launch scenarios | 1.3, 1.5, 1.10 | 0.75 d |
+| 6 | **P1** | Flip mypy to `disallow_untyped_defs = true`; remove `ignore_errors` from first-party modules | 1.2 | 1.0 d |
 | 7 | **P1** | Replace Flask dev server with `gunicorn --threads` in Docker CMD; update k8s resource requests | 1.9, 1.11 | 0.5 d |
-| 8 | **P1** | Flip mypy to `disallow_untyped_defs = true`; remove `ignore_errors` from 5 first-party modules | 1.2 | 1.0 d |
+| 8 | **P1** | Add `fl_http_request_duration_seconds` histogram, request counters, correlation IDs, and richer tracing spans | 1.7 | 0.5 d |
 | 9 | **P1** | Parallelise per-robot QP solves via `ThreadPoolExecutor` in `QPMPCPlanner.solve_with_refs` | 1.9 | 0.25 d |
-| 10 | **P1** | Add `fl_http_request_duration_seconds` histogram, `fl_mpc_solve_time_seconds` histogram, exemplar linking | 1.7 | 0.5 d |
-| 11 | **P1** | Add Helm chart + HPA + NetworkPolicy under `deploy/helm/fl-robots/` | 1.8, 1.11 | 1.0 d |
-| 12 | **P1** | Add `mutmut` nightly job targeting `models/simple_nn.py`, `mpc_qp.py`, `aggregator.py`; require ≥ 70 % score | 1.3 | 0.5 d |
-| 13 | **P1** | Add `pytest-randomly`, `schemathesis` fuzz job against `/api/openapi.json` | 1.3 | 0.5 d |
-| 14 | **P2** | Introduce ADRs (`docs/adr/0001…0005`) + Mermaid C4 diagrams | 1.1, 1.12 | 0.75 d |
-| 15 | **P2** | Add `Makefile` + devcontainer + shellcheck/hadolint/actionlint pre-commit hooks | 1.13 | 0.5 d |
+| 10 | **P1** | Add Helm chart + HPA + NetworkPolicy under `deploy/helm/fl-robots/` | 1.8, 1.11 | 1.0 d |
+| 11 | **P1** | Add `mutmut` nightly job targeting `models/simple_nn.py`, `mpc_qp.py`, `aggregator.py`; require ≥ 70 % score | 1.3 | 0.5 d |
+| 12 | **P1** | Add `pytest-randomly`, `schemathesis` fuzz job against `/api/openapi.json` | 1.3 | 0.5 d |
+| 13 | **P2** | Add a migration guide for `fl_robots_interfaces` and a reproducibility/checksum appendix in `docs/BENCHMARKS.md` | 1.12, 1.14 | 0.5 d |
+| 14 | **P2** | Add `.devcontainer/devcontainer.json` plus shellcheck/hadolint/actionlint/check-jsonschema hooks | 1.13 | 0.5 d |
+| 15 | **P2** | Add `env_info.json` / model-registry artefacts for benchmark provenance | 1.14 | 0.5 d |
 
 ---
 
@@ -318,7 +298,6 @@ Useful anchors cited in this audit:
 
 - `pyproject.toml:103-112` — coverage omit list
 - `pyproject.toml:124` — coverage `fail_under = 70`
-- `pyproject.toml:126-129` — dead `[tool.black]`
 - `pyproject.toml:131-164` — ruff config
 - `pyproject.toml:167-172` — per-file F401 waivers
 - `pyproject.toml:211-216` — mypy laxness
@@ -340,7 +319,7 @@ Useful anchors cited in this audit:
 - `src/fl_robots/fl_robots/aggregator.py:638-649` — FedProx wiring
 - `src/fl_robots/fl_robots/aggregator.py:672-687` — health-check inactivation
 - `src/fl_robots/fl_robots/aggregator.py:700` — MultiThreadedExecutor(4)
-- `src/fl_robots/fl_robots/robot_agent.py:77` — `hash(robot_id) % 10000` bug
+- `src/fl_robots/fl_robots/robot_agent.py` — deterministic seed parameter + FedProx client penalty path
 - `src/fl_robots/fl_robots/robot_agent.py:623-633` — FedProx client penalty
 - `src/fl_robots/fl_robots/models/simple_nn.py:43,47,51` — BN layers
 - `src/fl_robots/fl_robots/models/simple_nn.py:107-117` — `get_weights`
@@ -357,16 +336,19 @@ Useful anchors cited in this audit:
 - `src/fl_robots/fl_robots/mpc_qp.py:423-430` — shift-and-pad warm start
 - `src/fl_robots/fl_robots/standalone_web.py:200-308` — OpenAPI schema
 - `src/fl_robots/fl_robots/standalone_web.py:319-355` — auth + rate limit
-- `src/fl_robots/fl_robots/standalone_web.py:326` — non-constant-time compare
+- `src/fl_robots/fl_robots/standalone_web.py:326` — bearer auth comparison + rate limit
 - `src/fl_robots/fl_robots/standalone_web.py:379-403` — security headers
 - `src/fl_robots/fl_robots/standalone_web.py:381-382` — CSP `'unsafe-inline'`
 - `src/fl_robots/fl_robots/observability/metrics.py:31` — dedicated registry
 - `src/fl_robots/fl_robots/observability/metrics.py:80-85` — round latency histogram
 - `src/fl_robots/fl_robots/observability/metrics.py:110-136` — snapshot bridge
+- `src/fl_robots/fl_robots/utils/determinism.py` — shared deterministic seeding helper
+- `docs/adr/0001-dual-mode-ros-shim.md` … `0004-lifecycle-vs-node.md` — architecture decisions
+- `docs/RUNBOOK.md` / `docs/OBSERVABILITY.md` — operator docs
 - `scripts/benchmark.py:30-47` — BenchmarkConfig
 - `scripts/benchmark.py:174-178` — FedProx params-only penalty
 - `scripts/benchmark.py:200-211` — weighted FedAvg
-- `scripts/benchmark.py:216` — `torch.manual_seed`
+- `scripts/benchmark.py` — benchmark seeding + environment config
 - `scripts/benchmark.py:221-228` — Dirichlet seeding
 - `scripts/benchmark.py:287-294` — comms accounting
 - `scripts/benchmark.py:311-323` — seed sweep
@@ -396,4 +378,3 @@ Useful anchors cited in this audit:
 ---
 
 *End of audit.*
-

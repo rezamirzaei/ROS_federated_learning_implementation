@@ -177,14 +177,78 @@ metadata:
 spec:
   groups:
     - name: fl-robots.slo
+      interval: 30s
       rules:
         - alert: FLRobotsReadinessDown
           expr: up{job="fl-robots"} == 0
           for: 2m
           labels:
             severity: page
+            service: fl-robots
           annotations:
             summary: "fl-robots readiness probe has been down for 2m"
+            description: "The `/api/ready` endpoint has reported failure for 2 minutes. SLO-1 budget at risk."
+        - alert: FLRobotsTrainingStalled
+          expr: |
+            (fl_training_active == 1)
+            and on() (increase(fl_aggregation_rounds_total[5m]) == 0)
+          for: 5m
+          labels:
+            severity: warning
+            service: fl-robots
+          annotations:
+            summary: "Training is active but no rounds completed in 5m"
+            description: "The coordinator reports `training_active=1` but `rounds_completed_total` has not advanced. Aggregator may be blocked."
+        - alert: FLRobotsAggregationDivergenceHigh
+          expr: fl_aggregation_divergence > 0.5
+          for: 3m
+          labels:
+            severity: warning
+            service: fl-robots
+          annotations:
+            summary: "Gradient divergence above 0.5 for 3m"
+            description: "Clients are disagreeing strongly. Consider lowering the learning rate or switching to FedProx."
+        - alert: FLRobotsTrackingErrorSpike
+          expr: |
+            histogram_quantile(0.95, sum(rate(fl_tracking_error_bucket[5m])) by (le)) > 1.5
+          for: 5m
+          labels:
+            severity: warning
+            service: fl-robots
+          annotations:
+            summary: "MPC tracking error p95 > 1.5 m for 5m"
+            description: "Formation is not holding. Disturbance may be unrecovered; controller stuck in RECOVERING?"
+        - alert: FLRobotsControllerError
+          expr: fl_controller_state{state="ERROR"} == 1
+          for: 1m
+          labels:
+            severity: page
+            service: fl-robots
+          annotations:
+            summary: "Controller stuck in ERROR state"
+            description: "The simulation controller has been in ERROR for 1m. Manual reset required."
+        - alert: FLRobotsQpSolveSlow
+          expr: |
+            histogram_quantile(0.99, sum(rate(fl_mpc_solve_time_ms_bucket[5m])) by (le)) > 25
+          for: 10m
+          labels:
+            severity: warning
+            service: fl-robots
+          annotations:
+            summary: "MPC solve p99 > 25 ms for 10m"
+            description: "SLO-3 budget burning; check OSQP iteration count and neighbour keep-out constraint density."
+        - alert: FLRobotsBudgetBurn
+          expr: |
+            (
+              1 - avg_over_time(up{job="fl-robots"}[1h])
+            ) > 0.001
+          for: 15m
+          labels:
+            severity: page
+            service: fl-robots
+          annotations:
+            summary: "Readiness burn rate > 10× (30d budget)"
+            description: "Burning error budget >10× the 30d pace. SLO-1 at risk."
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget
@@ -196,4 +260,3 @@ spec:
   selector:
     matchLabels:
       app.kubernetes.io/name: fl-robots
-

@@ -20,8 +20,8 @@ groups:
 
       - alert: FLRobotsTrainingStalled
         expr: |
-          (fl_robots_training_active == 1)
-          and on() (increase(fl_robots_rounds_completed_total[5m]) == 0)
+          (fl_training_active == 1)
+          and on() (increase(fl_aggregation_rounds_total[5m]) == 0)
         for: 5m
         labels:
           severity: warning
@@ -31,7 +31,7 @@ groups:
           description: "The coordinator reports `training_active=1` but `rounds_completed_total` has not advanced. Aggregator may be blocked."
 
       - alert: FLRobotsAggregationDivergenceHigh
-        expr: fl_robots_aggregation_divergence > 0.5
+        expr: fl_aggregation_divergence > 0.5
         for: 3m
         labels:
           severity: warning
@@ -42,7 +42,7 @@ groups:
 
       - alert: FLRobotsTrackingErrorSpike
         expr: |
-          histogram_quantile(0.95, sum(rate(fl_robots_tracking_error_bucket[5m])) by (le)) > 1.5
+          histogram_quantile(0.95, sum(rate(fl_tracking_error_bucket[5m])) by (le)) > 1.5
         for: 5m
         labels:
           severity: warning
@@ -52,7 +52,7 @@ groups:
           description: "Formation is not holding. Disturbance may be unrecovered; controller stuck in RECOVERING?"
 
       - alert: FLRobotsControllerError
-        expr: fl_robots_controller_state{state="ERROR"} == 1
+        expr: fl_controller_state{state="ERROR"} == 1
         for: 1m
         labels:
           severity: page
@@ -63,7 +63,7 @@ groups:
 
       - alert: FLRobotsQpSolveSlow
         expr: |
-          histogram_quantile(0.99, sum(rate(fl_robots_mpc_solve_time_ms_bucket[5m])) by (le)) > 25
+          histogram_quantile(0.99, sum(rate(fl_mpc_solve_time_ms_bucket[5m])) by (le)) > 25
         for: 10m
         labels:
           severity: warning
@@ -84,4 +84,3 @@ groups:
         annotations:
           summary: "Readiness burn rate > 10× (30d budget)"
           description: "Burning error budget >10× the 30d pace. SLO-1 at risk."
-
