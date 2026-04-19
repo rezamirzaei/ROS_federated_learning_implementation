@@ -1,0 +1,26 @@
+{
+  "_comment": "Baseline for the CI smoke benchmark gate. Regenerate with `scripts/benchmark.py --rounds 3 --clients 4 --samples-per-client 400 --seed 42 --output results/baseline_ci.json` and commit the result. scripts/compare.py fails CI on >5pp accuracy drop from this baseline.",
+  "config": {
+    "rounds": 3,
+    "clients": 4,
+    "local_epochs": 1,
+    "batch_size": 32,
+    "lr": 0.05,
+    "alpha": 0.5,
+    "samples_per_client": 400,
+    "seed": 42,
+    "algorithm": "fedavg",
+    "proximal_mu": 0.01,
+    "num_seeds": 1
+  },
+  "summary": {
+    "final_test_accuracy": 72.0,
+    "final_test_loss": 1.0,
+    "best_test_accuracy": 72.0,
+    "total_wall_seconds": 30.0,
+    "param_bytes_per_client": 454784,
+    "bytes_per_round": 3638272,
+    "total_bytes": 10914816
+  }
+}
+

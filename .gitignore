@@ -109,10 +109,11 @@ venv.bak/
 install/
 log/
 
-# Results (can be large)
+# Results (can be large) — but keep the checked-in CI regression baseline.
 results/*.json
 results/*.csv
 results/*.png
+!results/baseline_ci.json
 
 # Model checkpoints
 models/*.pt
