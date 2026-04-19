@@ -641,8 +641,8 @@ requires-dist = [
     { name = "scipy", marker = "extra == 'ml'", specifier = ">=1.10.0" },
     { name = "scipy", marker = "extra == 'qp'", specifier = ">=1.10.0" },
     { name = "structlog", specifier = ">=24.1.0" },
-    { name = "torch", marker = "extra == 'ml'", specifier = ">=2.0.0,<=2.2.2" },
-    { name = "torchvision", marker = "extra == 'ml'", specifier = ">=0.15.0,<=0.17.2" },
+    { name = "torch", marker = "extra == 'ml'", specifier = ">=2.0.0,<=2.5.1" },
+    { name = "torchvision", marker = "extra == 'ml'", specifier = ">=0.15.0,<=0.20.1" },
     { name = "types-requests", marker = "extra == 'dev'" },
 ]
 provides-extras = ["ml", "qp", "ros", "viz", "otel", "dev"]
@@ -3470,7 +3470,7 @@ name = "triton"
 version = "2.2.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "filelock", marker = "(python_full_version < '3.11' and sys_platform == 'emscripten') or (python_full_version < '3.11' and sys_platform == 'win32') or (python_full_version < '3.14' and sys_platform != 'emscripten' and sys_platform != 'win32')" },
+    { name = "filelock", marker = "(python_full_version < '3.11' and sys_platform == 'emscripten') or (python_full_version < '3.11' and sys_platform == 'win32') or (python_full_version < '3.13' and sys_platform != 'emscripten' and sys_platform != 'win32')" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/95/05/ed974ce87fe8c8843855daa2136b3409ee1c126707ab54a8b72815c08b49/triton-2.2.0-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:a2294514340cfe4e8f4f9e5c66c702744c4a117d25e618bd08469d0bfed1e2e5", size = 167900779, upload-time = "2024-01-10T03:11:56.576Z" },
