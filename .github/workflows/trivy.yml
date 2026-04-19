@@ -16,7 +16,7 @@ jobs:
     name: Filesystem scan
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Run Trivy filesystem scan
         uses: aquasecurity/trivy-action@0.35.0
         with:
@@ -34,7 +34,7 @@ jobs:
     name: Standalone image scan
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: docker/setup-buildx-action@v3
       - name: Build standalone image for scanning
         uses: docker/build-push-action@v6
@@ -61,7 +61,7 @@ jobs:
     name: ROS runtime image scan
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: docker/setup-buildx-action@v3
       - name: Build ROS runtime image for scanning
         uses: docker/build-push-action@v6
