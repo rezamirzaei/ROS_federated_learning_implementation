@@ -50,11 +50,14 @@ repos:
       - id: yamllint
         args: ["-d", "relaxed"]
         exclude: ^deploy/helm/
-  - repo: local
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.11.2
     hooks:
       - id: mypy
         name: mypy (type-check)
-        entry: uv run mypy src/fl_robots/fl_robots
-        language: system
-        pass_filenames: false
-        types: [python]
+        files: ^src/fl_robots/fl_robots/
+        args: ["--config-file=pyproject.toml"]
+        additional_dependencies:
+          - pydantic>=2.0.0
+          - types-requests
+          - numpy>=1.24.0,<2.0
