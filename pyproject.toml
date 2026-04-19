@@ -193,6 +193,9 @@ ignore = [
 quote-style = "double"
 indent-style = "space"
 
+[tool.ruff.lint.isort]
+known-first-party = ["fl_robots"]
+
 [tool.setuptools]
 include-package-data = true
 

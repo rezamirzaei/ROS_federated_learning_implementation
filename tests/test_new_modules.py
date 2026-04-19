@@ -7,6 +7,7 @@ import sqlite3
 from typing import TYPE_CHECKING, Any
 
 import pytest
+
 from fl_robots.controller import (
     COMMAND_NAMES,
     CommandRequest,

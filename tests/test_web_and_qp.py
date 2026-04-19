@@ -6,6 +6,7 @@ import math
 from typing import TYPE_CHECKING, Any
 
 import pytest
+
 from fl_robots.simulation import SimulationEngine
 from fl_robots.standalone_web import create_app
 
