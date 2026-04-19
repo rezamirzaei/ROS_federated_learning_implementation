@@ -647,8 +647,8 @@ requires-dist = [
     { name = "scipy", marker = "extra == 'ml'", specifier = ">=1.10.0" },
     { name = "scipy", marker = "extra == 'qp'", specifier = ">=1.10.0" },
     { name = "structlog", specifier = ">=24.1.0" },
-    { name = "torch", marker = "extra == 'ml'", specifier = ">=2.5.0,<=2.5.1" },
-    { name = "torchvision", marker = "extra == 'ml'", specifier = ">=0.20.0,<=0.20.1" },
+    { name = "torch", marker = "extra == 'ml'", specifier = ">=2.2.0,<2.6" },
+    { name = "torchvision", marker = "extra == 'ml'", specifier = ">=0.17.0,<0.21" },
     { name = "types-requests", marker = "extra == 'dev'" },
 ]
 provides-extras = ["ml", "qp", "ros", "viz", "otel", "dev"]
