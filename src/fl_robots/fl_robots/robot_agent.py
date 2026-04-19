@@ -86,10 +86,10 @@ class SyntheticDataGenerator:
 
         Returns:
             X: Sensor readings (batch_size, 12)
-               - 8 LIDAR distances (normalized 0-1)
-               - 4 goal-related features (distance, angle, velocity)
+                - 8 LIDAR distances (normalized 0-1)
+                - 4 goal-related features (distance, angle, velocity)
             y: Action labels (batch_size,)
-               - 0: Forward, 1: Left, 2: Right, 3: Stop
+                - 0: Forward, 1: Left, 2: Right, 3: Stop
         """
         X = []
         y = []

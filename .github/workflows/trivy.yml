@@ -73,7 +73,7 @@ jobs:
           load: true
           push: false
       - name: Run Trivy ROS image scan
-        uses: aquasecurity/trivy-action@0.24.0
+        uses: aquasecurity/trivy-action@0.28.0
         with:
           image-ref: fl-robots-ros:scan
           format: sarif

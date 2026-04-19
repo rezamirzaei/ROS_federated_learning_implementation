@@ -72,6 +72,9 @@ nav:
       - ADR 0002 · JSON string fallback protocol: adr/0002-json-string-fallback-protocol.md
       - ADR 0003 · Planner pluggability: adr/0003-planner-pluggability.md
       - ADR 0004 · Lifecycle vs plain node: adr/0004-lifecycle-vs-node.md
+      - ADR 0005 · Standalone CSRF strategy: adr/0005-standalone-csrf-strategy.md
+      - ADR 0006 · Solver caching warm-start: adr/0006-solver-caching-warm-start.md
+      - ADR 0007 · WSGI Gunicorn serving: adr/0007-wsgi-gunicorn-serving.md
   - Benchmarks: BENCHMARKS.md
   - Development: DEVELOPMENT.md
   - Observability: OBSERVABILITY.md

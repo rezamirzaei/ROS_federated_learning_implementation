@@ -313,7 +313,7 @@ class DistributedTOAEstimator:
             )
 
         try:
-            result, residuals, rank, _ = np.linalg.lstsq(A, b, rcond=None)
+            result, _residuals, rank, _ = np.linalg.lstsq(A, b, rcond=None)
             if rank < 2:
                 return  # degenerate geometry — keep random init
             seed_pt = result.astype(float)
