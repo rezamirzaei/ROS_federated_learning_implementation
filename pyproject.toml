@@ -21,7 +21,6 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
-    "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Topic :: Scientific/Engineering :: Robotics",
     "Typing :: Typed",
@@ -46,11 +45,13 @@ fl-robots-benchmark = "fl_robots.scripts.benchmark:main"
 [project.optional-dependencies]
 # Federated learning stack — needed for robot_agent / aggregator / tests.
 ml = [
-    # torch 2.5.x is the first series shipping cp313 wheels. Keep a broad
-    # range so contributors can install locally with newer/older Python
-    # minor versions; CI pins the exact version via uv.lock.
-    "torch>=2.2.0,<2.6",
-    "torchvision>=0.17.0,<0.21",
+    # torch 2.2.2 is the last release shipping macOS x86_64 wheels; 2.3+
+    # dropped Intel-Mac wheels entirely. We therefore cap torch at 2.2.2 and
+    # officially support Python 3.10-3.12 (cp313 wheels first appear in
+    # torch 2.5+ which lacks Intel-Mac support — the two are mutually
+    # exclusive). uv.lock pins the exact version for reproducible CI.
+    "torch>=2.0.0,<=2.2.2",
+    "torchvision>=0.15.0,<=0.17.2",
     "numpy>=1.24.0,<2.0",
     "scipy>=1.10.0",
     "scikit-learn>=1.3.0",
