@@ -50,7 +50,7 @@ jobs:
       name: pypi
       url: https://pypi.org/p/fl-robots
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: python-dist
           path: dist
@@ -118,7 +118,7 @@ jobs:
     needs: [build-python, docker-images]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: python-dist
           path: dist
