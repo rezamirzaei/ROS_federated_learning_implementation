@@ -34,7 +34,7 @@ jobs:
           format: spdx-json
           artifact-name: fl-robots-python-sbom.spdx.json
       - name: Attest provenance
-        uses: actions/attest-build-provenance@v1
+        uses: actions/attest-build-provenance@v4
         with:
           subject-path: dist/*
       - uses: actions/upload-artifact@v4
@@ -107,7 +107,7 @@ jobs:
           provenance: true
           sbom: true
       - name: Attest image provenance
-        uses: actions/attest-build-provenance@v1
+        uses: actions/attest-build-provenance@v4
         with:
           subject-name: ghcr.io/${{ github.repository_owner }}/${{ matrix.name }}
           subject-digest: ${{ steps.push.outputs.digest }}
